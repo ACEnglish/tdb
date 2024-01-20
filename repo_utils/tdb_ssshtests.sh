@@ -170,6 +170,17 @@ run test_deid_badparam $tdb deid -o repo_utils -i $INDIR/vcf/doesntexist
 if [ $test_deid_badparam ]; then
     assert_exit_code 1
 fi
+
+# ------------------------------------------------------------
+#                                 dump
+# ------------------------------------------------------------
+
+run test_dump $tdb dump $INDIR/tdb/HG00438_chr14.tdb -o $OD/HG00438.dump.txt
+if [ $test_dump ]; then
+    assert_equal $(fn_md5 $INDIR/queries/HG00438.dump.txt) $(fn_md5 $OD/HG00438.dump.txt)
+    assert_exit_code 0
+fi
+
 # ------------------------------------------------------------
 #                                 coverage.py
 # ------------------------------------------------------------

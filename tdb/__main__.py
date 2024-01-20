@@ -8,12 +8,14 @@ from tdb.create import create_main
 from tdb.query import query_main
 from tdb.append import append_main
 from tdb.deid import deid_main
+from tdb.dump import dump_main
 
 CMDS = {
     "create": ("Create a tdb", create_main),
     "query": ("Query a tdb", query_main),
     "append": ("Append a VCF/tdb to an existing tdb", append_main),
     "deid": ("Deidentify a tdb", deid_main),
+    "dump": ("Dump a tdb", dump_main),
 }
 
 

@@ -42,7 +42,7 @@ def allele_count(data, samples=None, *args, **kwargs):
     return (data['locus'].set_index("LocusID")
                 .join(acnts)
                 .fillna(0)
-                .astype({'allele_number':np.uint16, 'AC':np.uint16}))
+                .astype({'allele_number':np.uint16, 'AC':np.uint16})).reset_index()
 
 @tdb_opener
 def allele_count_length(data, samples=None, *args, **kwargs):
@@ -73,7 +73,7 @@ def allele_count_length(data, samples=None, *args, **kwargs):
     ret = ret.reset_index().set_index(["LocusID", "allele_length"])
     ret['is_ref'] = is_ref
     ret['is_ref'] = ret['is_ref'].fillna(True).astype(bool)
-    return ret.reset_index(level=1)[["chrom", "start", "end", "is_ref", "allele_length", "AC", "AF"]]
+    return ret[["chrom", "start", "end", "is_ref", "AC", "AF"]].reset_index()
 
 def variant_length(allele_table):
     """
@@ -215,7 +215,7 @@ def methyl(data, *args, **kwargs):
                         [["LocusID", "allele_number", "allele_length", "average_methylation"] + new_cols]
                     ))
 
-    return pd.concat(parts)
+    return pd.concat(parts).drop_duplicates()
 
 QS = {"allele_cnts": allele_count,
       "allele_cnts_bylen": allele_count_length,
@@ -240,8 +240,6 @@ def query_main(args):
                         help="query to run")
     parser.add_argument("dbname", metavar="TDB", type=str,
                         help="tdb name")
-    parser.add_argument("--index", action="store_true",
-                        help="Write index with tsv/csv outputs")
     parser.add_argument("-o", "--output", type=str, default='/dev/stdout',
                         help="Output destination (stdout)")
     parser.add_argument("-O", "--output-type", default='t', choices=['t', 'c', 'p'],
@@ -255,8 +253,8 @@ def query_main(args):
     result = QS[args.query](args.dbname)
 
     if args.output_type == 't':
-        result.to_csv(args.output, sep='\t', index=args.index)
+        result.to_csv(args.output, sep='\t', index=False)
     elif args.output_type == 'c':
-        result.to_csv(args.output, index=args.index)
+        result.to_csv(args.output, index=False)
     elif args.output_type == 'p':
         result.to_parquet(args.output)
