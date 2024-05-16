@@ -2,6 +2,7 @@
 Utilities for interacting with a tdb
 """
 import os
+import sys
 import glob
 import logging
 
@@ -18,7 +19,8 @@ def get_tdb_samplenames(file):
     Parses the sample name from a tdb sample parquet files
     """
     ret = []
-    for i in glob.glob(os.path.join(file, "sample.*.pq")):
+    full_path = os.path.abspath(os.path.expanduser(file))
+    for i in glob.glob(os.path.join(full_path, "sample.*.pq")):
         ret.append(os.path.basename(i)[len('sample.'):-len('.pq')])
     return ret
 
@@ -29,7 +31,8 @@ def get_tdb_filenames(dbname):
     """
     l_fn = os.path.join(dbname, 'locus.pq')
     a_fn = os.path.join(dbname, 'allele.pq')
-    s_files = glob.glob(os.path.join(dbname, 'sample.*.pq'))
+    full_path = os.path.abspath(os.path.expanduser(dbname))
+    s_files = glob.glob(os.path.join(full_path, 'sample.*.pq'))
     s_names = get_tdb_samplenames(dbname)
     s_dict = dict(zip(s_names, s_files))
 
@@ -79,6 +82,9 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
     ret['sample'] = {}
     samp_to_fetch = samples if samples is not None else names["sample"].keys()
     for samp in samp_to_fetch:
+        if samp not in names['sample']:
+            logging.error("Unable to find sample table `sample.%s.pq` in the tdb", samp)
+            sys.exit(1)
         ret['sample'][samp] = pq.read_table(
             names['sample'][samp], filters=sfilters).to_pandas()
     return ret
