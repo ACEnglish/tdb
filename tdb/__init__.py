@@ -9,6 +9,7 @@ from tdb.dbutils import (
     load_tdb,
     tdb_consolidate,
     vcf_to_tdb,
+    write_samples,
 )
 
 from tdb.query import (

@@ -3,6 +3,7 @@ Create a tdb
 """
 import os
 import sys
+import shutil
 import logging
 import argparse
 
@@ -70,6 +71,8 @@ def create_main(args):
 
     # Set the first to the first tdb
     # Find the first element that ends with '.vcf.gz'
+    # To be complete, I'd probably want to make sure it's the
+    # tdb with the most samples so that there is less work
     for s in args.inputs:
         if s.endswith('.tdb'):
             # Set this element as the first element of the list
@@ -78,12 +81,34 @@ def create_main(args):
             break
 
     m_data = None
+    if not os.path.exists(args.output):
+        os.mkdir(args.output)
+
     for pos, i in enumerate(args.inputs):
         logging.info("Loading %s (%d/%d)", i, pos + 1, len(args.inputs))
-        n_data = tdb.load_tdb(i) if i.rstrip('/').endswith(".tdb") else tdb.vcf_to_tdb(i)
-        m_data = n_data if m_data is None else tdb.tdb_consolidate(m_data, n_data)
-        # At this point can I just close the m_data samples?
-        # And I'll do that by writing the samples first, then we're good.
+        # Never load the samples
+        is_dir = i.rstrip('/').endswith(".tdb")
+        # We'll copy the first tdb's sample tables
+        # Otherwise we need to load 
+        sload = [] if m_data is None else None
+        n_data = tdb.load_tdb(i, samples=sload) if is_dir else tdb.vcf_to_tdb(i)
+        if m_data is None:
+            # copy samples to the new directory
+            if is_dir:
+                s = tdb.get_tdb_filenames(i)
+                logging.info("Moving %d samples", len(s['sample']))
+                for _, in_path in s['sample'].items():
+                    shutil.copyfile(in_path, os.path.join(args.output, os.path.basename(in_path)))
+            m_data = n_data
+        else:
+            m_data = tdb.tdb_consolidate(m_data, n_data)
+            logging.info("Writing %d samples", len(m_data['sample']))
+
+        # New samples to output should be the only ones in there
+        tdb.write_samples(m_data['sample'], args.output)
+
+        del(m_data['sample'])
+        m_data['sample'] = {}
 
     logging.info("Writing parquet files")
     tdb.dump_tdb(m_data, args.output)

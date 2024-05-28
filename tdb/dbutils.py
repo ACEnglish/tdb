@@ -115,6 +115,30 @@ def set_tdb_types(d):
     #    d['sample'][samp] = val.astype(s_types)
 
 
+def write_samples(samples, output):
+    """
+    Write tdb samples to output folder
+    """
+    s_schema = pa.schema([('LocusID', pa.uint32()),
+                          ('allele_number', pa.uint16()),
+                          ('spanning_reads', pa.uint16()),
+                          ('length_range_lower', pa.uint16()),
+                          ('length_range_upper', pa.uint16()),
+                          ('average_methylation', pa.float32())
+                          ])
+    for sample, value in samples.items():
+        o_fn = os.path.join(output, f"sample.{sample}.pq")
+        m_table = pa.Table.from_pandas(value)
+        n_table = []
+        n_names = []
+        for col, dtype in zip(s_schema.names, s_schema.types):
+            n_table.append(pa.compute.cast(m_table[col], dtype))
+            n_names.append(col)
+        n_table = pa.Table.from_arrays(n_table, names=n_names)
+        writer = pq.ParquetWriter(o_fn, s_schema, compression='gzip')
+        writer.write_table(n_table)
+        writer.close()
+
 def dump_tdb(data, output):
     """
     Write tdb data to output folder
@@ -129,25 +153,8 @@ def dump_tdb(data, output):
     data['allele'].to_parquet(
         pq_fns['allele'], index=False, compression='gzip')
 
-    s_schema = pa.schema([('LocusID', pa.uint32()),
-                          ('allele_number', pa.uint16()),
-                          ('spanning_reads', pa.uint16()),
-                          ('length_range_lower', pa.uint16()),
-                          ('length_range_upper', pa.uint16()),
-                          ('average_methylation', pa.float32())
-                          ])
-    for sample, value in data['sample'].items():
-        o_fn = os.path.join(output, f"sample.{sample}.pq")
-        m_table = pa.Table.from_pandas(value)
-        n_table = []
-        n_names = []
-        for col, dtype in zip(s_schema.names, s_schema.types):
-            n_table.append(pa.compute.cast(m_table[col], dtype))
-            n_names.append(col)
-        n_table = pa.Table.from_arrays(n_table, names=n_names)
-        writer = pq.ParquetWriter(o_fn, s_schema, compression='gzip')
-        writer.write_table(n_table)
-        writer.close()
+    write_samples(data['sample'], output)
+
 
 
 def pull_alleles(data):
@@ -367,10 +374,9 @@ def tdb_consolidate(exist_db, new_db):
     logging.info("Consolidating samples")
     # I don't need to have samples loaded beforehand, that'll be a big save
     ret['sample'] = {}
-    for sample, samp in new_db.items():
-        m_samp = (samp
-                    .rename(columns={"LocusID": "LocusID_new", "allele_number": "allele_number_new"})
-                    .set_index(["LocusID_new", "allele_number_new"]))
+    for sample, samp in new_db['sample'].items():
+        samp.rename(columns={"LocusID": "LocusID_new", "allele_number": "allele_number_new"}, inplace=True)
+        samp.set_index(["LocusID_new", "allele_number_new"], inplace=True)
         ret['sample'][sample] = (samp
                                     .join(allele_lookup, how='left')
                                     .reset_index(drop=True)
