@@ -337,14 +337,16 @@ def tdb_consolidate(exist_db, new_db):
 
     ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]]
     
-    logging.info("new loci:\t%d", len(ret['locus']) - len(el))
+    nloci = len(ret['locus']) - len(el)
+    if nloci:
+        logging.info("New loci:\t%d", nloci)
 
     first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(int)
 
     logging.info("Consolidating alleles")
 
-    ea = exist_db["allele"].copy()
-    na = new_db["allele"].copy()
+    ea = exist_db["allele"]
+    na = new_db["allele"]
 
     # na gets its LocusID reset
     id_map = first_locus_lookup.set_index(['LocusID_new'])['LocusID'].to_dict()
@@ -364,7 +366,7 @@ def tdb_consolidate(exist_db, new_db):
 
     assert len(ret['allele']) == len(ret['allele'][["LocusID",
                                                     "allele_length", "sequence"]].drop_duplicates()), 'differ'
-    logging.info("new alleles:\t%d", len(ret["allele"]) - len(ea))
+    logging.info("New alleles:\t%d", len(ret["allele"]) - len(ea))
     
     allele_lookup = union[["LocusID", "allele_number", "LocusID_new", "allele_number_new"]].dropna()
     allele_lookup['LocusID_new'] = allele_lookup['LocusID_new'].astype(int)
