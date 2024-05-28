@@ -242,6 +242,7 @@ def vcf_to_tdb(vcf_fn):
 def locus_consolidator(exist_db, new_db):
     """
     Consolidate Locus tables
+    But I need to do this by never altering exist_db LocusID
     """
     el = exist_db["locus"].set_index(["chrom", "start", "end"])
     nl = new_db["locus"].set_index(["chrom", "start", "end"])
@@ -264,6 +265,7 @@ def locus_consolidator(exist_db, new_db):
 def allele_consolidator(exist_db, new_db, consol_locus):
     """
     Consolidate allele tables
+    But I need to do this by never altering exist_db information
     """
     new_locusids = dict(
         zip(consol_locus["LocusID_new"], consol_locus["LocusID"]))
@@ -312,23 +314,67 @@ def sample_consolidator(exist_db, new_db, allele_lookup):
 
 def tdb_consolidate(exist_db, new_db):
     """
-    Combine two tdbs. returns new in-memory tdb
+    Updates new_db to use exist_db LocusID and allele_number
     """
     ret = {}
     logging.info("Consolidating loci")
-    ret["locus"], consol_locus = locus_consolidator(exist_db, new_db)
-    logging.info("locus count:\t%d", len(ret['locus']))
+    el = exist_db["locus"].set_index(["chrom", "start", "end"])
+    nl = new_db["locus"].set_index(["chrom", "start", "end"])
+    union = el.join(nl, lsuffix="_orig", rsuffix='_new', how='outer')
+
+    mask = union['LocusID_orig'].isna()
+    start_id = union['LocusID_orig'].max() + 1
+    union.loc[mask, 'LocusID'] = np.arange(start_id, start_id + mask.sum())
+    union.loc[~mask, 'LocusID'] = union[~mask]['LocusID_orig']
+    union['LocusID'] = union['LocusID'].astype(int)
+
+    ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]]
+    
+    logging.info("new loci:\t%d", len(ret['locus']) - len(el))
+
+    first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(int)
 
     logging.info("Consolidating alleles")
-    ret["allele"], allele_lookup = allele_consolidator(
-        exist_db, new_db, consol_locus)
+
+    ea = exist_db["allele"].copy()
+    na = new_db["allele"].copy()
+
+    # na gets its LocusID reset
+    id_map = first_locus_lookup.set_index(['LocusID_new'])['LocusID'].to_dict()
+    # Need this to tie for allele later
+    na['LocusID_new'] = na['LocusID']
+    na['LocusID'] = na['LocusID_new'].map(id_map)
+
+    ea = ea.set_index(["LocusID", "allele_length", "sequence"])
+    na = na.set_index(["LocusID", "allele_length", "sequence"])
+
+    union = ea.join(na, how='outer', lsuffix='_orig', rsuffix='_new')
+
+    union = union.reset_index().sort_values(["LocusID", "allele_number_orig"])
+    union['allele_number'] = union.groupby(['LocusID']).cumcount()
+
+    ret['allele'] = union[["LocusID", "allele_number", "allele_length", "sequence"]]
+
     assert len(ret['allele']) == len(ret['allele'][["LocusID",
                                                     "allele_length", "sequence"]].drop_duplicates()), 'differ'
-    logging.info("allele count:\t%d", len(ret["allele"]))
+    logging.info("new alleles:\t%d", len(ret["allele"]) - len(ea))
+    
+    allele_lookup = union[["LocusID", "allele_number", "LocusID_new", "allele_number_new"]].dropna()
+    allele_lookup['LocusID_new'] = allele_lookup['LocusID_new'].astype(int)
+    allele_lookup['allele_number_new'] = allele_lookup['allele_number_new'].astype(int)
+    allele_lookup.set_index(['LocusID_new', 'allele_number_new'], inplace=True)
 
     logging.info("Consolidating samples")
-    ret['sample'], gt_count = sample_consolidator(
-        exist_db, new_db, allele_lookup)
-    logging.info("genotype count:\t%d", gt_count)
-
+    # I don't need to have samples loaded beforehand, that'll be a big save
+    ret['sample'] = {}
+    for sample, samp in new_db.items():
+        m_samp = (samp
+                    .rename(columns={"LocusID": "LocusID_new", "allele_number": "allele_number_new"})
+                    .set_index(["LocusID_new", "allele_number_new"]))
+        ret['sample'][sample] = (samp
+                                    .join(allele_lookup, how='left')
+                                    .reset_index(drop=True)
+                                 [["LocusID", "allele_number", "spanning_reads",
+                                   "length_range_lower", "length_range_upper",
+                                   "average_methylation"]])
     return ret

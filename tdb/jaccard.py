@@ -26,12 +26,12 @@ def jaccard_compare_kmers(kmers1, kmers1_freq, kmers2, kmers2_freq):
 
     return intersection / union if union else None
 
-def jaccard_compare_seqs(seq1, seq2, kmer_len=5, min_freq=5, norm=False):
+def jaccard_compare_seqs(seq1, seq2, kmer_len=5, min_freq=5):
     """
     Return the jaccard similarity of two sequences
     """
     return jaccard_compare_kmers(*make_kmer_sets(seq1, kmer_len, min_freq),
-                                 *make_kmer_sets(seq2, kmer_len, min_freq), norm)
+                                 *make_kmer_sets(seq2, kmer_len, min_freq))
 
 def alleles_jaccard_dist(alleles, counts, kmer_len=5, min_freq=5):
     """

@@ -68,11 +68,22 @@ def create_main(args):
         logging.error("cannot create database. exiting")
         sys.exit(1)
 
+    # Set the first to the first tdb
+    # Find the first element that ends with '.vcf.gz'
+    for s in args.inputs:
+        if s.endswith('.tdb'):
+            # Set this element as the first element of the list
+            args.inputs.remove(s)
+            args.inputs.insert(0, s)
+            break
+
     m_data = None
     for pos, i in enumerate(args.inputs):
         logging.info("Loading %s (%d/%d)", i, pos + 1, len(args.inputs))
         n_data = tdb.load_tdb(i) if i.rstrip('/').endswith(".tdb") else tdb.vcf_to_tdb(i)
         m_data = n_data if m_data is None else tdb.tdb_consolidate(m_data, n_data)
+        # At this point can I just close the m_data samples?
+        # And I'll do that by writing the samples first, then we're good.
 
     logging.info("Writing parquet files")
     tdb.dump_tdb(m_data, args.output)
