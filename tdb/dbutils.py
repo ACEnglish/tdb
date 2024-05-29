@@ -81,7 +81,7 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
 
     # backwards compatibility
     if isinstance(ret['allele']['sequence'].iloc[0], str):
-        ret['allele']['sequence'] = ret['allele']['sequence'].encode('utf-8')
+        ret['allele']['sequence'] = ret['allele']['sequence'].str.encode('utf-8')
 
     ret['sample'] = {}
     samp_to_fetch = samples if samples is not None else names["sample"].keys()
@@ -342,13 +342,13 @@ def tdb_consolidate(exist_db, new_db):
     union['LocusID'] = union['LocusID'].astype(int)
 
     ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]].copy()
-    
+
     nloci = len(ret['locus']) - len(el)
     if nloci:
         logging.info("New loci:\t%d", nloci)
 
     first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(int)
-    
+
     del(el)
     del(nl)
     del(union)
@@ -366,7 +366,7 @@ def tdb_consolidate(exist_db, new_db):
 
     ea = ea.set_index(["LocusID", "allele_length", "sequence"])
     na = na.set_index(["LocusID", "allele_length", "sequence"])
-    
+
     union = ea.join(na, how='outer', lsuffix='_orig', rsuffix='_new')
 
     union = union.reset_index().sort_values(["LocusID", "allele_number_orig"])
@@ -377,12 +377,12 @@ def tdb_consolidate(exist_db, new_db):
     assert len(ret['allele']) == len(ret['allele'][["LocusID",
                                                     "allele_length", "sequence"]].drop_duplicates()), 'differ'
     logging.info("New alleles:\t%d", len(ret["allele"]) - len(ea))
-    
+
     allele_lookup = union[["LocusID", "allele_number", "LocusID_new", "allele_number_new"]].dropna()
     allele_lookup['LocusID_new'] = allele_lookup['LocusID_new'].astype(int)
     allele_lookup['allele_number_new'] = allele_lookup['allele_number_new'].astype(int)
     allele_lookup.set_index(['LocusID_new', 'allele_number_new'], inplace=True)
-    
+
     del(ea)
     del(na)
     del(union)
