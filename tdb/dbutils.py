@@ -343,9 +343,11 @@ def tdb_consolidate(exist_db, new_db):
 
     first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(int)
 
+    del(union)
+
     logging.info("Consolidating alleles")
 
-    ea = exist_db["allele"]
+    ea = exist_db["allele"].copy()
     na = new_db["allele"]
 
     # na gets its LocusID reset
@@ -356,6 +358,8 @@ def tdb_consolidate(exist_db, new_db):
 
     ea = ea.set_index(["LocusID", "allele_length", "sequence"])
     na = na.set_index(["LocusID", "allele_length", "sequence"])
+    del(ea)
+    del(na)
 
     union = ea.join(na, how='outer', lsuffix='_orig', rsuffix='_new')
 
@@ -372,6 +376,8 @@ def tdb_consolidate(exist_db, new_db):
     allele_lookup['LocusID_new'] = allele_lookup['LocusID_new'].astype(int)
     allele_lookup['allele_number_new'] = allele_lookup['allele_number_new'].astype(int)
     allele_lookup.set_index(['LocusID_new', 'allele_number_new'], inplace=True)
+    
+    del(union)
 
     logging.info("Consolidating samples")
     # I don't need to have samples loaded beforehand, that'll be a big save
