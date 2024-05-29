@@ -78,7 +78,11 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
 
     ret['allele'] = pq.read_table(
         names['allele'], filters=afilters).to_pandas()
-    # ret['allele']['sequence'] = ret['allele']['sequence'].apply(bytes)
+
+    # backwards compatibility
+    if isinstance(ret['allele']['sequence'].iloc[0], str):
+        ret['allele']['sequence'] = ret['allele']['sequence'].encode('utf-8')
+
     ret['sample'] = {}
     samp_to_fetch = samples if samples is not None else names["sample"].keys()
     for samp in samp_to_fetch:
@@ -100,7 +104,8 @@ def set_tdb_types(d):
                "end": np.uint32}
     a_types = {"LocusID": np.uint32,
                "allele_number": np.uint16,
-               "allele_length": np.uint16}
+               "allele_length": np.uint16,
+               "sequence": bytes}
     #s_types = {"LocusID": np.uint32,
     #           "allele_number": np.uint16,
     #           "spanning_reads": np.uint16,
@@ -175,6 +180,7 @@ def pull_alleles(data):
                .reset_index(drop=True)
                .drop_duplicates(subset=["LocusID", "sequence"]))
     alleles["allele_length"] = alleles["sequence"].str.len()
+    alleles["sequence"] = alleles["sequence"].str.encode()
     alleles = (alleles.sort_values(["LocusID", "allele_number"])
                [["LocusID", "allele_number", "allele_length", "sequence"]]
                .reset_index(drop=True))
