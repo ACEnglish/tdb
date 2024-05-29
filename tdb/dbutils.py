@@ -335,19 +335,21 @@ def tdb_consolidate(exist_db, new_db):
     union.loc[~mask, 'LocusID'] = union[~mask]['LocusID_orig']
     union['LocusID'] = union['LocusID'].astype(int)
 
-    ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]]
+    ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]].copy()
     
     nloci = len(ret['locus']) - len(el)
     if nloci:
         logging.info("New loci:\t%d", nloci)
 
     first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(int)
-
+    
+    del(el)
+    del(nl)
     del(union)
 
     logging.info("Consolidating alleles")
 
-    ea = exist_db["allele"].copy()
+    ea = exist_db["allele"]
     na = new_db["allele"]
 
     # na gets its LocusID reset
@@ -358,15 +360,13 @@ def tdb_consolidate(exist_db, new_db):
 
     ea = ea.set_index(["LocusID", "allele_length", "sequence"])
     na = na.set_index(["LocusID", "allele_length", "sequence"])
-    del(ea)
-    del(na)
-
+    
     union = ea.join(na, how='outer', lsuffix='_orig', rsuffix='_new')
 
     union = union.reset_index().sort_values(["LocusID", "allele_number_orig"])
     union['allele_number'] = union.groupby(['LocusID']).cumcount()
 
-    ret['allele'] = union[["LocusID", "allele_number", "allele_length", "sequence"]]
+    ret['allele'] = union[["LocusID", "allele_number", "allele_length", "sequence"]].copy()
 
     assert len(ret['allele']) == len(ret['allele'][["LocusID",
                                                     "allele_length", "sequence"]].drop_duplicates()), 'differ'
@@ -377,6 +377,8 @@ def tdb_consolidate(exist_db, new_db):
     allele_lookup['allele_number_new'] = allele_lookup['allele_number_new'].astype(int)
     allele_lookup.set_index(['LocusID_new', 'allele_number_new'], inplace=True)
     
+    del(ea)
+    del(na)
     del(union)
 
     logging.info("Consolidating samples")
@@ -391,4 +393,5 @@ def tdb_consolidate(exist_db, new_db):
                                  [["LocusID", "allele_number", "spanning_reads",
                                    "length_range_lower", "length_range_upper",
                                    "average_methylation"]])
+    del(new_db['sample'])
     return ret

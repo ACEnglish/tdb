@@ -1,6 +1,7 @@
 """
 Create a tdb
 """
+import gc
 import os
 import sys
 import shutil
@@ -102,13 +103,20 @@ def create_main(args):
             m_data = n_data
         else:
             m_data = tdb.tdb_consolidate(m_data, n_data)
+            del(n_data)
             logging.info("Writing %d samples", len(m_data['sample']))
-
+        
         # New samples to output should be the only ones in there
         tdb.write_samples(m_data['sample'], args.output)
 
+        lmem = m_data['locus'].memory_usage(deep=True).sum()
+        amem = m_data['allele'].memory_usage(deep=True).sum()
+        logging.info("Locus Memory Usage %f Mb", round(lmem / 1e6, 4))
+        logging.info("Allele Memory Usage %f Mb", round(amem / 1e6, 4))
+
         del(m_data['sample'])
         m_data['sample'] = {}
+        gc.collect()
 
     logging.info("Writing parquet files")
     tdb.dump_tdb(m_data, args.output)
