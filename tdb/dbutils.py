@@ -153,13 +153,9 @@ def dump_tdb(data, output):
     if not os.path.exists(output):
         os.mkdir(output)
     pq_fns = get_tdb_filenames(output)
-    set_tdb_types(data)
     data['locus'].to_parquet(pq_fns['locus'], index=False, compression='gzip')
-    data['allele'].to_parquet(
-        pq_fns['allele'], index=False, compression='gzip')
-
+    data['allele'].to_parquet(pq_fns['allele'], index=False, compression='gzip')
     write_samples(data['sample'], output)
-
 
 
 def pull_alleles(data):
@@ -249,80 +245,10 @@ def vcf_to_tdb(vcf_fn):
         gt_count += len(ret['sample'][sample])
     pysam.set_verbosity(old)
     logging.info("genotype count:\t%d", gt_count)
+    set_tdb_types(ret)
     return ret
 
 
-def locus_consolidator(exist_db, new_db):
-    """
-    Consolidate Locus tables
-    But I need to do this by never altering exist_db LocusID
-    """
-    el = exist_db["locus"].set_index(["chrom", "start", "end"])
-    nl = new_db["locus"].set_index(["chrom", "start", "end"])
-    union = el.join(nl, rsuffix='_new', how='outer').sort_values("LocusID")
-
-    # Need new LocusIDs for anything that exists in new but not in original
-    new_ids = np.array(
-        range(len(el), len(el) + int(union["LocusID"].isna().sum())))
-    union["LocusID"] = (np.hstack([union[~union["LocusID"].isna()]["LocusID"].values,
-                        np.array(new_ids)]))
-    union["LocusID_new"] = (union["LocusID_new"]
-                            .fillna(-1)
-                            .astype(int))
-    union["LocusID"] = union["LocusID"].astype(int)
-    ret = (union.reset_index()[["LocusID", "chrom", "start", "end"]]
-                .sort_values(["chrom", "start", "end"])).copy()
-    return ret, union
-
-
-def allele_consolidator(exist_db, new_db, consol_locus):
-    """
-    Consolidate allele tables
-    But I need to do this by never altering exist_db information
-    """
-    new_locusids = dict(
-        zip(consol_locus["LocusID_new"], consol_locus["LocusID"]))
-    new_db["allele"]["LocusID"] = new_db["allele"]["LocusID"].map(new_locusids)
-
-    for table in new_db["sample"].values():
-        table["LocusID"] = table["LocusID"].map(new_locusids)
-
-    ea = exist_db["allele"].set_index(["LocusID", "allele_length", "sequence"])
-    na = new_db["allele"].set_index(["LocusID", "allele_length", "sequence"])
-    new_allele = (ea.merge(na, how='outer', left_index=True, right_index=True)
-                  .reset_index()
-                  .sort_values(["LocusID", "allele_number_x", "allele_number_y"])
-                  .drop_duplicates(subset=["LocusID", "allele_number_x", "allele_number_y"]))
-
-    new_allele["allele_number"] = (new_allele.groupby(["LocusID"]).cumcount())
-    allele_lookup = (new_allele[["LocusID", "allele_number_y", "allele_number"]]
-                     .dropna()
-                     .drop_duplicates()
-                     .rename(columns={"allele_number": "n_an", "allele_number_y": "allele_number"})
-                     .set_index(["LocusID", "allele_number"])).copy()
-    ret = new_allele[["LocusID", "allele_number",
-                      "allele_length", "sequence"]].copy()
-
-    return ret, allele_lookup
-
-
-def sample_consolidator(exist_db, new_db, allele_lookup):
-    """
-    Consolidate sample tables
-    """
-    ret = exist_db['sample']
-    gt_count = len(exist_db['sample'])
-
-    for sample, table in new_db["sample"].items():
-        ret[sample] = (table.set_index(["LocusID", "allele_number"])
-                       .join(allele_lookup)
-                       .reset_index()
-                       .drop(columns="allele_number")
-                       .rename(columns={"n_an": "allele_number"})
-                       )[["LocusID", "allele_number", "spanning_reads", "length_range_lower",
-                          "length_range_upper", "average_methylation"]].copy()
-        gt_count += len(ret[sample])
-    return ret, gt_count
 
 
 def tdb_consolidate(exist_db, new_db):
@@ -339,15 +265,15 @@ def tdb_consolidate(exist_db, new_db):
     start_id = union['LocusID_orig'].max() + 1
     union.loc[mask, 'LocusID'] = np.arange(start_id, start_id + mask.sum())
     union.loc[~mask, 'LocusID'] = union[~mask]['LocusID_orig']
-    union['LocusID'] = union['LocusID'].astype(int)
+    union['LocusID'] = union['LocusID'].astype(np.uint32)
 
-    ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]].copy()
+    ret['locus'] = union.reset_index()[["LocusID", "chrom", "start", "end"]]
 
     nloci = len(ret['locus']) - len(el)
     if nloci:
         logging.info("New loci:\t%d", nloci)
 
-    first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(int)
+    first_locus_lookup = union[["LocusID_new", "LocusID"]].reset_index(drop=True).dropna().astype(np.uint32)
 
     del(el)
     del(nl)
@@ -368,19 +294,21 @@ def tdb_consolidate(exist_db, new_db):
     na = na.set_index(["LocusID", "allele_length", "sequence"])
 
     union = ea.join(na, how='outer', lsuffix='_orig', rsuffix='_new')
+    
+    union.reset_index(inplace=True)
+    union.sort_values(by=["LocusID", "allele_number_orig"], inplace=True)
 
-    union = union.reset_index().sort_values(["LocusID", "allele_number_orig"])
-    union['allele_number'] = union.groupby(['LocusID']).cumcount()
+    union['allele_number'] = union.groupby(['LocusID']).cumcount().astype(np.uint16)
 
-    ret['allele'] = union[["LocusID", "allele_number", "allele_length", "sequence"]].copy()
+    ret['allele'] = union[["LocusID", "allele_number", "allele_length", "sequence"]]
 
     assert len(ret['allele']) == len(ret['allele'][["LocusID",
                                                     "allele_length", "sequence"]].drop_duplicates()), 'differ'
     logging.info("New alleles:\t%d", len(ret["allele"]) - len(ea))
 
     allele_lookup = union[["LocusID", "allele_number", "LocusID_new", "allele_number_new"]].dropna()
-    allele_lookup['LocusID_new'] = allele_lookup['LocusID_new'].astype(int)
-    allele_lookup['allele_number_new'] = allele_lookup['allele_number_new'].astype(int)
+    #allele_lookup['LocusID_new'] = allele_lookup['LocusID_new']
+    #allele_lookup['allele_number_new'] = allele_lookup['allele_number_new']
     allele_lookup.set_index(['LocusID_new', 'allele_number_new'], inplace=True)
 
     del(ea)
@@ -399,5 +327,4 @@ def tdb_consolidate(exist_db, new_db):
                                  [["LocusID", "allele_number", "spanning_reads",
                                    "length_range_lower", "length_range_upper",
                                    "average_methylation"]])
-    del(new_db['sample'])
     return ret

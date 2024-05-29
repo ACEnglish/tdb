@@ -53,6 +53,17 @@ def check_args(args):
             pysam.set_verbosity(old) # turn back on
     return check_fail
 
+def format_bytes(size):
+    """
+    If size is more than 1 GB, format as GB, otherwise as MB
+    """
+    if size >= 1e9:
+        size_gb = size / (1024 * 1024 * 1024)
+        return f"{size_gb:.2f} GB"
+    else:
+        size_mb = size / (1024 * 1024)
+        return f"{size_mb:.2f} MB"
+
 def create_main(args):
     """
     Create a new tdb from multiple input calls
@@ -111,8 +122,8 @@ def create_main(args):
 
         lmem = m_data['locus'].memory_usage(deep=True).sum()
         amem = m_data['allele'].memory_usage(deep=True).sum()
-        logging.info("Locus Memory Usage %f Mb", round(lmem / 1e6, 4))
-        logging.info("Allele Memory Usage %f Mb", round(amem / 1e6, 4))
+        logging.info("Locus Memory Usage %s", format_bytes(lmem))
+        logging.info("Allele Memory Usage %s", format_bytes(amem))
 
         del(m_data['sample'])
         m_data['sample'] = {}
