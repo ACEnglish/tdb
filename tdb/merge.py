@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 
 import tdb
-from tdb.create import get_samples
 
 GLOBAL_DUCK_SET=[]
 def setup_duck(con):
@@ -20,6 +19,11 @@ def setup_duck(con):
     for i in GLOBAL_DUCK_SET:
         con.execute(i)
 
+def get_samples(file):
+    """
+    Gets the sample name from vcf or tdb inputs
+    """
+    return 
 def check_args(args):
     """
     Preflight checks on arguments. Returns True if there is a problem
@@ -42,7 +46,7 @@ def check_args(args):
             logging.error("expected .tdb")
             check_fail = True
         else: # can only check sample of valid file names
-            for s in get_samples(i):
+            for s in tdb.get_tdb_samplenames(i)
                 if s in seen_samples:
                     logging.error(f"input {i} has redundant sample with {seen_samples[s]}")
                     check_fail = True

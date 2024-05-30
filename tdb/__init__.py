@@ -7,7 +7,6 @@ from tdb.dbutils import (
     get_tdb_filenames,
     get_tdb_samplenames,
     load_tdb,
-    tdb_consolidate,
     vcf_to_tdb,
     write_samples,
 )

@@ -18,6 +18,12 @@ tdb create -o output.tdb input.vcf.gz
 tdb query allele_cnts output.tdb
 ```
 
+Merge samples with:
+```
+tdb create --mem 20 --threads 4 output1.tdb output2.tdb
+```
+Recommended 5-10GB of memory per-thread
+
 ## Tutorials
 
 See the [wiki](https://github.com/acenglish/tdb/wiki) or start with
