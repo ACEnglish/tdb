@@ -20,7 +20,7 @@ tdb query allele_cnts output.tdb
 
 Merge samples with:
 ```
-tdb create --mem 20 --threads 4 output1.tdb output2.tdb
+tdb merge --output merged.tdb --mem 20 --threads 4 output1.tdb output2.tdb
 ```
 Recommended 5-10GB of memory per-thread
 
