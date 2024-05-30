@@ -370,7 +370,7 @@ def merge_main(args):
     dest_tdb = tdb.get_tdb_filenames(args.output)
     
     for pos, i in enumerate(args.inputs):
-        pos += 1 
+        pos += 2
         logging.info("Consolidating %s (%d/%d)", i, pos, num_tdbs)
         update_tdb = tdb.get_tdb_filenames(i)
         acomp = args.no_compress and pos == num_tdbs
