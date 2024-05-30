@@ -219,7 +219,7 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
 
     tmp2 = truvari.make_temp_filename(suffix=".pq")
     # And concatenate (UNION)
-    comp = "" if compress else ", COMPRESSION GZIP"
+    comp = ", COMPRESSION GZIP" if compress else ""
     concatenate_query = f"""
     COPY (
         SELECT 
@@ -281,7 +281,7 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     con = duckdb.connect()
     setup_duck(con)
 
-    comp = "" if compress else ", COMPRESSION GZIP"
+    comp = ", COMPRESSION GZIP" if compress else ""
     query = f"""
     COPY(
         SELECT
@@ -363,15 +363,17 @@ def merge_main(args):
     if args.mem:
         GLOBAL_DUCK_SET.append(f"SET memory_limit = '{args.mem}GB';")
 
+    num_tdbs = len(args.inputs)
     first_tdb_name = args.inputs.pop(0)
-    logging.info("Consolidating %s", first_tdb_name)
+    logging.info("Consolidating %s (1/%d)", first_tdb_name, num_tdbs)
     shutil.copytree(first_tdb_name, args.output)
     dest_tdb = tdb.get_tdb_filenames(args.output)
     
     for pos, i in enumerate(args.inputs):
-        logging.info("Consolidating %s", i)
+        pos += 1 
+        logging.info("Consolidating %s (%d/%d)", i, pos, num_tdbs)
         update_tdb = tdb.get_tdb_filenames(i)
-        acomp = args.no_compress and pos + 1 == len(args.inputs)
+        acomp = args.no_compress and pos == num_tdbs
         tdb_consolidate(dest_tdb, update_tdb,
                          allele_gz=acomp,
                          samp_gz=args.no_compress)
