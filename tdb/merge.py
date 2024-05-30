@@ -31,24 +31,23 @@ def check_args(args):
     check_fail = False
 
     if os.path.exists(args.output):
-        logging.error(f"output {args.output} already exists")
+        logging.error(f"Output {args.output} already exists")
         check_fail = True
     if not args.output.endswith(".tdb"):
-        logging.error(f"output {args.output} must end with `.tdb`")
+        logging.error(f"Output {args.output} must end with `.tdb`")
         check_fail = True
     seen_samples = {}
     for i in args.inputs:
         if not os.path.exists(i):
-            logging.error(f"input {i} does not exist")
+            logging.error(f"Input {i} does not exist")
             check_fail = True
         if not i.rstrip('/').endswith(".tdb"):
-            logging.error(f"unrecognized file extension on {i}")
-            logging.error("expected .tdb")
+            logging.error(f"Unrecognized file extension on {i} expected .tdb")
             check_fail = True
         else: # can only check sample of valid file names
             for s in tdb.get_tdb_samplenames(i)
                 if s in seen_samples:
-                    logging.error(f"input {i} has redundant sample with {seen_samples[s]}")
+                    logging.error(f"Input {i} has redundant sample {s} with {seen_samples[s]}")
                     check_fail = True
                 seen_samples[s] = i
     return check_fail
@@ -360,7 +359,7 @@ def merge_main(args):
     truvari.setup_logging()
 
     if check_args(args):
-        logging.error("cannot create database. exiting")
+        logging.error("Cannot create database. Exiting")
         sys.exit(1)
     
     GLOBAL_DUCK_SET.append(f"SET threads = {args.threads};")

@@ -18,17 +18,16 @@ def check_args(args):
     check_fail = False
 
     if os.path.exists(args.output):
-        logging.error(f"output {args.output} already exists")
+        logging.error(f"Output  {args.output} already exists")
         check_fail = True
     if not args.output.endswith(".tdb"):
-        logging.error(f"output {args.output} must end with `.tdb`")
+        logging.error(f"Output {args.output} must end with `.tdb`")
         check_fail = True
     if not os.path.exists(input):
-        logging.error(f"input {i} does not exist")
+        logging.error(f"Input {i} does not exist")
         check_fail = True
     if not i.rstrip('/').endswith((".vcf", ".vcf.gz")):
-        logging.error(f"unrecognized file extension on {i}")
-        logging.error("expected .vcf .vcf.gz")
+        logging.error(f"Unrecognized file extension on {i}. Expected .vcf .vcf.gz")
         check_fail = True
     return check_fail
 
@@ -46,7 +45,7 @@ def create_main(args):
 
     truvari.setup_logging()
     if check_args(args):
-        logging.error("cannot create database. exiting")
+        logging.error("Cannot create database. Exiting")
         sys.exit(1)
 
     logging.info("Loading %s", args.input)
