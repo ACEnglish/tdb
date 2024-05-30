@@ -14,6 +14,12 @@ import pandas as pd
 import tdb
 from tdb.create import get_samples
 
+GLOBAL_DUCK_SET=[]
+def setup_duck(con):
+    global GLOBAL_DUCK_SET
+    for i in GLOBAL_DUCK_SET:
+        con.execute(i)
+
 def check_args(args):
     """
     Preflight checks on arguments. Returns True if there is a problem
@@ -52,6 +58,8 @@ def join_loci_tables(original_loci, second_loci):
     update_LocusID to_LocusID
     """
     con = duckdb.connect()
+    setup_duck(con)
+
     loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
 
     query = f"""
@@ -67,6 +75,7 @@ def join_loci_tables(original_loci, second_loci):
             second.chrom = original.chrom
             AND second.start = original.start
             AND second.end = original.end
+        ORDER BY update_LocusID, to_LocusID
     ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET)
     """
 
@@ -83,6 +92,8 @@ def update_allele_locusid(second_allele, loci_lookup):
     returns the path of the temporary allele table
     """
     con = duckdb.connect()
+    setup_duck(con)
+
     second_updated_locusid = truvari.make_temp_filename(suffix=".pq")
 
     create_updated_allele = f"""
@@ -98,6 +109,7 @@ def update_allele_locusid(second_allele, loci_lookup):
             read_parquet('{loci_lookup}') AS lookup
         ON
             second.LocusID == lookup.update_LocusID
+        ORDER BY LocusID, allele_number
     ) TO '{second_updated_locusid}' (FORMAT PARQUET)
     """
 
@@ -115,6 +127,8 @@ def create_allele_lookup(original_allele, second_allele):
     Returns the path to the allele lookup
     """
     con = duckdb.connect()
+    setup_duck(con)
+
     partial_lookup = truvari.make_temp_filename(suffix=".pq")
 
     query = f"""
@@ -180,6 +194,8 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     This overwrites original_allele
     """
     con = duckdb.connect()
+    setup_duck(con)
+
     tmp = truvari.make_temp_filename(suffix=".pq")
 
     subset_query = f"""
@@ -235,8 +251,10 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     
     Returns the temporary sample_lookup file
     """
-    sample_lookup = truvari.make_temp_filename(suffix=".pq")
     con = duckdb.connect()
+    setup_duck(con)
+
+    sample_lookup = truvari.make_temp_filename(suffix=".pq")
 
     query = f"""
     COPY (
@@ -261,6 +279,8 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     Writes directly to the destination output_path
     """
     con = duckdb.connect()
+    setup_duck(con)
+
     comp = "" if compress else ", COMPRESSION GZIP"
     query = f"""
     COPY(
@@ -316,12 +336,17 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     shutil.os.remove(sample_lookup)
 
 def merge_main(args):
+    global GLOBAL_DUCK_SET
     parser = argparse.ArgumentParser(prog="tdb merge", description=__doc__,
                             formatter_class=argparse.RawDescriptionHelpFormatter)
     # parser.add_argument("--into", merge into the first tdb listed instead of copying
     # it into the output. This will replace append
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
                         help="Output tdb directory")
+    parser.add_argument("--mem", default=None,
+                        help="Maximum memory in GB (off)")
+    parser.add_argument("--threads", default=1, type=int,
+                        help="Number of threads (%(default)s)")
     parser.add_argument("--no-compress", action="store_false",
                         help="Skip compression (faster merge, bigger output)")
     parser.add_argument("inputs", metavar="IN", nargs="+",
@@ -334,6 +359,10 @@ def merge_main(args):
         logging.error("cannot create database. exiting")
         sys.exit(1)
     
+    GLOBAL_DUCK_SET.append(f"SET threads = {args.threads};")
+    if args.mem:
+        GLOBAL_DUCK_SET.append(f"SET memory_limit = '{args.mem}GB';")
+
     first_tdb_name = args.inputs.pop(0)
     logging.info("Consolidating %s", first_tdb_name)
     shutil.copytree(first_tdb_name, args.output)
