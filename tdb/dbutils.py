@@ -13,6 +13,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+
 def get_tdb_samplenames(file):
     """
     Parses the sample name from a tdb sample parquet files
@@ -80,13 +81,15 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
 
     # backwards compatibility
     if isinstance(ret['allele']['sequence'].iloc[0], str):
-        ret['allele']['sequence'] = ret['allele']['sequence'].str.encode('utf-8')
+        ret['allele']['sequence'] = ret['allele']['sequence'].str.encode(
+            'utf-8')
 
     ret['sample'] = {}
     samp_to_fetch = samples if samples is not None else names["sample"].keys()
     for samp in samp_to_fetch:
         if samp not in names['sample']:
-            logging.error("Unable to find sample table `sample.%s.pq` in the tdb", samp)
+            logging.error(
+                "Unable to find sample table `sample.%s.pq` in the tdb", samp)
             sys.exit(1)
         ret['sample'][samp] = pq.read_table(
             names['sample'][samp], filters=sfilters).to_pandas()
@@ -109,8 +112,8 @@ def set_tdb_types(d):
     d['locus'] = d['locus'].astype(l_types)
     d['allele'] = d['allele'].astype(a_types)
 
-    #last I checked, these types couldn't handle nones
-    #s_types = {"LocusID": np.uint32,
+    # last I checked, these types couldn't handle nones
+    # s_types = {"LocusID": np.uint32,
     #           "allele_number": np.uint16,
     #           "spanning_reads": np.uint16,
     #           "length_range_lower": np.uint16,
@@ -119,6 +122,7 @@ def set_tdb_types(d):
 
     # for samp, val in d['sample'].items():
     #    d['sample'][samp] = val.astype(s_types)
+
 
 def write_samples(samples, output):
     """
@@ -144,6 +148,7 @@ def write_samples(samples, output):
         writer.write_table(n_table)
         writer.close()
 
+
 def dump_tdb(data, output):
     """
     Write tdb data to output folder
@@ -154,7 +159,8 @@ def dump_tdb(data, output):
         os.mkdir(output)
     pq_fns = get_tdb_filenames(output)
     data['locus'].to_parquet(pq_fns['locus'], index=False, compression='gzip')
-    data['allele'].to_parquet(pq_fns['allele'], index=False, compression='gzip')
+    data['allele'].to_parquet(
+        pq_fns['allele'], index=False, compression='gzip')
     write_samples(data['sample'], output)
 
 
@@ -229,7 +235,8 @@ def vcf_to_tdb(vcf_fn):
     logging.info("locus count:\t%d", len(data))
     data["LocusID"] = range(len(data))
 
-    ret["locus"] = data[["LocusID", "chrom", "start", "end"]].reset_index(drop=True).copy()  # pylint: disable=unsubscriptable-object # pylint/issues/3139
+    ret["locus"] = data[["LocusID", "chrom", "start", "end"]].reset_index(
+        drop=True).copy()  # pylint: disable=unsubscriptable-object # pylint/issues/3139
 
     logging.info("Wrangling alleles")
     allele_df = pull_alleles(data)

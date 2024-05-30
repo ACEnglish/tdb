@@ -13,17 +13,15 @@ import pandas as pd
 
 import tdb
 
-GLOBAL_DUCK_SET=[]
+GLOBAL_DUCK_SET = []
+
+
 def setup_duck(con):
     global GLOBAL_DUCK_SET
     for i in GLOBAL_DUCK_SET:
         con.execute(i)
 
-def get_samples(file):
-    """
-    Gets the sample name from vcf or tdb inputs
-    """
-    return 
+
 def check_args(args):
     """
     Preflight checks on arguments. Returns True if there is a problem
@@ -44,10 +42,11 @@ def check_args(args):
         if not i.rstrip('/').endswith(".tdb"):
             logging.error(f"Unrecognized file extension on {i} expected .tdb")
             check_fail = True
-        else: # can only check sample of valid file names
+        else:  # can only check sample of valid file names
             for s in tdb.get_tdb_samplenames(i):
                 if s in seen_samples:
-                    logging.error(f"Input {i} has redundant sample {s} with {seen_samples[s]}")
+                    logging.error(
+                        f"Input {i} has redundant sample {s} with {seen_samples[s]}")
                     check_fail = True
                 seen_samples[s] = i
     return check_fail
@@ -88,10 +87,11 @@ def join_loci_tables(original_loci, second_loci):
     # WARNING!! I'm not doing the disjoint solving, yet
     return loci_lookup_parquet_path
 
+
 def update_allele_locusid(second_allele, loci_lookup):
     """
     Makes a temporary allele table with updated LocusID
-    
+
     returns the path of the temporary allele table
     """
     con = duckdb.connect()
@@ -118,15 +118,16 @@ def update_allele_locusid(second_allele, loci_lookup):
 
     con.execute(create_updated_allele)
     con.close()
-    
+
     return second_updated_locusid
+
 
 def create_allele_lookup(original_allele, second_allele):
     """
     create an allele lookup between two db's allele tables
-    
+
     Note that the second allele table must already have its loci updated
-    
+
     Returns the path to the allele lookup
     """
     con = duckdb.connect()
@@ -152,11 +153,12 @@ def create_allele_lookup(original_allele, second_allele):
         ORDER BY LocusID_orig, LocusID_second, update_allele_number, to_allele_number
     ) TO '{partial_lookup}' (FORMAT PARQUET)
     """
-    
+
     con.execute(query)
     con.close()
-    
+
     return partial_lookup
+
 
 def update_allele_numbers(partial_lookup):
     """
@@ -170,19 +172,24 @@ def update_allele_numbers(partial_lookup):
     allele_lookup_path = truvari.make_temp_filename(suffix=".pq")
 
     data = pd.read_parquet(partial_lookup)
-    data['LocusID'] = data['LocusID_orig'].combine_first(data['LocusID_second'])
+    data['LocusID'] = data['LocusID_orig'].combine_first(
+        data['LocusID_second'])
     data.drop(columns=["LocusID_orig", "LocusID_second"], inplace=True)
-    data.sort_values(["LocusID", "to_allele_number", "update_allele_number"], inplace=True)
+    data.sort_values(["LocusID", "to_allele_number",
+                     "update_allele_number"], inplace=True)
     data['to_allele_number_new'] = data.groupby(['LocusID']).cumcount()
 
-    lktypes = {"LocusID": np.uint32, "update_allele_number": np.uint16, "to_allele_number_new": np.uint16}
+    lktypes = {"LocusID": np.uint32, "update_allele_number": np.uint16,
+               "to_allele_number_new": np.uint16}
     new_alleles = data[data['to_allele_number'].isna()]
-    new_alleles = new_alleles.drop(columns=["to_allele_number"]).astype(lktypes)
+    new_alleles = new_alleles.drop(
+        columns=["to_allele_number"]).astype(lktypes)
     new_alleles.to_parquet(new_alleles_path, index=False)
-    
+
     logging.info("new alleles: %d", len(new_alleles))
     # I need to translate all the alleles... in the sample table. This is only for sample table
-    allele_lookup = data[["LocusID", "update_allele_number", "to_allele_number_new"]].dropna().astype(lktypes)
+    allele_lookup = data[["LocusID", "update_allele_number",
+                          "to_allele_number_new"]].dropna().astype(lktypes)
     allele_lookup.to_parquet(allele_lookup_path, index=False)
 
     return new_alleles_path, allele_lookup_path
@@ -248,10 +255,11 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     shutil.move(tmp2, original_allele)
     shutil.os.remove(tmp)
 
+
 def create_sample_lookup(loci_lookup, allele_lookup):
     """
     Join the loci lookup and allele lookup so that we can translate the samples' LocusID and allele_number columns
-    
+
     Returns the temporary sample_lookup file
     """
     con = duckdb.connect()
@@ -274,6 +282,7 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     con.execute(query)
     con.close()
     return sample_lookup
+
 
 def update_sample_table(second_sample, sample_lookup, output_path, compress):
     """
@@ -307,6 +316,7 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     con.execute(query)
     con.close()
 
+
 def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     """
     Consolidates two tdbs into a destination
@@ -318,10 +328,13 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     """
     loci_lookup = join_loci_tables(tdb_1['locus'], tdb_2['locus'])
     # I'm still not writing joined locus.
-    second_allele_locus_updated = update_allele_locusid(tdb_2['allele'], loci_lookup)
-    partial_lookup = create_allele_lookup(tdb_1['allele'], second_allele_locus_updated)
+    second_allele_locus_updated = update_allele_locusid(
+        tdb_2['allele'], loci_lookup)
+    partial_lookup = create_allele_lookup(
+        tdb_1['allele'], second_allele_locus_updated)
     new_alleles, allele_lookup = update_allele_numbers(partial_lookup)
-    consolidate_alleles(tdb_1['allele'], second_allele_locus_updated, new_alleles, allele_gz)
+    consolidate_alleles(
+        tdb_1['allele'], second_allele_locus_updated, new_alleles, allele_gz)
     sample_lookup = create_sample_lookup(loci_lookup, allele_lookup)
 
     output_dir = os.path.dirname(tdb_1['locus'])
@@ -338,10 +351,11 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     shutil.os.remove(allele_lookup)
     shutil.os.remove(sample_lookup)
 
+
 def merge_main(args):
     global GLOBAL_DUCK_SET
     parser = argparse.ArgumentParser(prog="tdb merge", description=__doc__,
-                            formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     # parser.add_argument("--into", merge into the first tdb listed instead of copying
     # it into the output. This will replace append
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
@@ -361,7 +375,7 @@ def merge_main(args):
     if check_args(args):
         logging.error("Cannot create database. Exiting")
         sys.exit(1)
-    
+
     GLOBAL_DUCK_SET.append(f"SET threads = {args.threads};")
     if args.mem:
         GLOBAL_DUCK_SET.append(f"SET memory_limit = '{args.mem}GB';")
@@ -371,13 +385,13 @@ def merge_main(args):
     logging.info("Consolidating %s (1/%d)", first_tdb_name, num_tdbs)
     shutil.copytree(first_tdb_name, args.output)
     dest_tdb = tdb.get_tdb_filenames(args.output)
-    
+
     for pos, i in enumerate(args.inputs):
         pos += 2
         logging.info("Consolidating %s (%d/%d)", i, pos, num_tdbs)
         update_tdb = tdb.get_tdb_filenames(i)
         acomp = args.no_compress and pos == num_tdbs
         tdb_consolidate(dest_tdb, update_tdb,
-                         allele_gz=acomp,
-                         samp_gz=args.no_compress)
+                        allele_gz=acomp,
+                        samp_gz=args.no_compress)
     logging.info("Finished")
