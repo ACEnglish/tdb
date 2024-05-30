@@ -23,10 +23,10 @@ def check_args(args):
     if not args.output.endswith(".tdb"):
         logging.error(f"Output {args.output} must end with `.tdb`")
         check_fail = True
-    if not os.path.exists(input):
-        logging.error(f"Input {i} does not exist")
+    if not os.path.exists(args.input):
+        logging.error(f"Input {args.input} does not exist")
         check_fail = True
-    if not i.rstrip('/').endswith((".vcf", ".vcf.gz")):
+    if not args.input.rstrip('/').endswith((".vcf", ".vcf.gz")):
         logging.error(f"Unrecognized file extension on {i}. Expected .vcf .vcf.gz")
         check_fail = True
     return check_fail

@@ -182,7 +182,7 @@ def pull_alleles(data):
                .reset_index(drop=True)
                .drop_duplicates(subset=["LocusID", "sequence"]))
     alleles["allele_length"] = alleles["sequence"].str.len()
-    alleles["sequence"] = alleles["sequence"].str.encode()
+    alleles["sequence"] = alleles["sequence"].str.encode("utf-8")
     alleles = (alleles.sort_values(["LocusID", "allele_number"])
                [["LocusID", "allele_number", "allele_length", "sequence"]]
                .reset_index(drop=True))
