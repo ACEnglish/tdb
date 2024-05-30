@@ -11,20 +11,19 @@ from tdb.dump import dump_main
 from tdb.merge import merge_main
 
 CMDS = {
-    "create": ("Create a tdb", create_main),
-    "merge": ("Merge tdbs", merge_main),
-    "query": ("Query a tdb", query_main),
-    "deid": ("Deidentify a tdb", deid_main),
-    "dump": ("Dump a tdb", dump_main),
+    "create": create_main,
+    "merge": merge_main,
+    "query": query_main,
+    "deid": deid_main,
+    "dump": dump_main,
 }
 
 
-cmd_str = "\n".join([f"    {k:9} {t[0]}" for k,t in CMDS.items()])
+cmd_str = ", ".join([_ for _ in CMDS.keys()])
 USAGE = f"""
 tdb v0.2.0 - Tandem repeat database tools
 
-Commands:
-{cmd_str}"""
+Commands: {cmd_str}"""
 
 def main():
     """
@@ -40,7 +39,7 @@ def main():
 
     args = parser.parse_args()
 
-    CMDS[args.cmd][1](args.options)
+    CMDS[args.cmd](args.options)
 
 if __name__ == '__main__':
     main()

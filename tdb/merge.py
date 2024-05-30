@@ -45,7 +45,7 @@ def check_args(args):
             logging.error(f"Unrecognized file extension on {i} expected .tdb")
             check_fail = True
         else: # can only check sample of valid file names
-            for s in tdb.get_tdb_samplenames(i)
+            for s in tdb.get_tdb_samplenames(i):
                 if s in seen_samples:
                     logging.error(f"Input {i} has redundant sample {s} with {seen_samples[s]}")
                     check_fail = True
