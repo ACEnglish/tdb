@@ -171,7 +171,7 @@ def update_allele_numbers(partial_lookup):
     return new_alleles_path, allele_lookup_path
 
 
-def consolidate_alleles(original_allele, second_allele, new_alleles):
+def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     """
     This consolidates the original alleles with the second alleles.
     Only the subset of new alleles in second alleles are pulled.
@@ -203,6 +203,7 @@ def consolidate_alleles(original_allele, second_allele, new_alleles):
 
     tmp2 = truvari.make_temp_filename(suffix=".pq")
     # And concatenate (UNION)
+    comp = "" if compress else ", COMPRESSION GZIP"
     concatenate_query = f"""
     COPY (
         SELECT 
@@ -219,7 +220,7 @@ def consolidate_alleles(original_allele, second_allele, new_alleles):
             CAST(sequence AS BLOB) AS sequence
         FROM read_parquet('{tmp}')
         ORDER BY LocusID, allele_number, allele_length, sequence
-    ) TO '{tmp2}' (FORMAT PARQUET, COMPRESSION GZIP)
+    ) TO '{tmp2}' (FORMAT PARQUET{comp})
     """
 
     con.execute(concatenate_query)
@@ -253,13 +254,14 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     con.close()
     return sample_lookup
 
-def update_sample_table(second_sample, sample_lookup, output_path):
+def update_sample_table(second_sample, sample_lookup, output_path, compress):
     """
     Update the LocusID and allele_number of a second_sample to the consolidated ids.
 
     Writes directly to the destination output_path
     """
     con = duckdb.connect()
+    comp = "" if compress else ", COMPRESSION GZIP"
     query = f"""
     COPY(
         SELECT
@@ -277,12 +279,12 @@ def update_sample_table(second_sample, sample_lookup, output_path):
             lookup.update_LocusID = sample.LocusID
             AND lookup.update_allele_number == sample.allele_number
         ORDER BY LocusID, allele_number
-    ) TO '{output_path}' (FORMAT PARQUET, COMPRESSION GZIP)
+    ) TO '{output_path}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
     con.close()
 
-def tdb_consolidate(tdb_1, tdb_2):
+def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     """
     Consolidates two tdbs into a destination
     Assumes tdb_1 is the base and its ids won't change.
@@ -296,13 +298,13 @@ def tdb_consolidate(tdb_1, tdb_2):
     second_allele_locus_updated = update_allele_locusid(tdb_2['allele'], loci_lookup)
     partial_lookup = create_allele_lookup(tdb_1['allele'], second_allele_locus_updated)
     new_alleles, allele_lookup = update_allele_numbers(partial_lookup)
-    consolidate_alleles(tdb_1['allele'], second_allele_locus_updated, new_alleles)
+    consolidate_alleles(tdb_1['allele'], second_allele_locus_updated, new_alleles, allele_gz)
     sample_lookup = create_sample_lookup(loci_lookup, allele_lookup)
 
     output_dir = os.path.dirname(tdb_1['locus'])
     for name, second_sample in tdb_2['sample'].items():
         output_name = os.path.join(output_dir, f"sample.{name}.pq")
-        update_sample_table(second_sample, sample_lookup, output_name)
+        update_sample_table(second_sample, sample_lookup, output_name, samp_gz)
 
     # Clean up after yourself
     # You know, if you give them static names you won't need to clean but once...
@@ -320,6 +322,8 @@ def merge_main(args):
     # it into the output. This will replace append
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
                         help="Output tdb directory")
+    parser.add_argument("--no-compress", action="store_false",
+                        help="Skip compression (faster merge, bigger output)")
     parser.add_argument("inputs", metavar="IN", nargs="+",
                         help="tdb files")
     args = parser.parse_args(args)
@@ -335,8 +339,11 @@ def merge_main(args):
     shutil.copytree(first_tdb_name, args.output)
     dest_tdb = tdb.get_tdb_filenames(args.output)
     
-    for i in args.inputs:
+    for pos, i in enumerate(args.inputs):
         logging.info("Consolidating %s", i)
         update_tdb = tdb.get_tdb_filenames(i)
-        tdb_consolidate(dest_tdb, update_tdb)
+        acomp = args.no_compress and pos + 1 == len(args.inputs)
+        tdb_consolidate(dest_tdb, update_tdb,
+                         allele_gz=acomp,
+                         samp_gz=args.no_compress)
     logging.info("Finished")
