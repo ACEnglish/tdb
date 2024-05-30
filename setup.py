@@ -31,5 +31,6 @@ setup(
         "truvari>=4.0",
         "pysam>=0.22",
         "pyarrow>=14.0",
+        "duckdb",
     ],
 )

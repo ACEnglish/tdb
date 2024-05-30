@@ -9,9 +9,11 @@ from tdb.query import query_main
 from tdb.append import append_main
 from tdb.deid import deid_main
 from tdb.dump import dump_main
+from tdb.merge import merge_main
 
 CMDS = {
     "create": ("Create a tdb", create_main),
+    "merge": ("Merge tdbs", merge_main),
     "query": ("Query a tdb", query_main),
     "append": ("Append a VCF/tdb to an existing tdb", append_main),
     "deid": ("Deidentify a tdb", deid_main),
@@ -21,7 +23,7 @@ CMDS = {
 
 cmd_str = "\n".join([f"    {k:9} {t[0]}" for k,t in CMDS.items()])
 USAGE = f"""
-tdb v0.0.1 - Tandem repeat database tools
+tdb v0.2.0 - Tandem repeat database tools
 
 Commands:
 {cmd_str}"""
