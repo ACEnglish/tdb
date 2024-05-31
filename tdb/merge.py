@@ -163,7 +163,9 @@ def create_allele_lookup(original_allele, second_allele):
         COALESCE(original.LocusID, second.LocusID) AS LocusID,
         second.allele_number AS update_allele_number,
         original.allele_number AS to_allele_number,
-        ROW_NUMBER() OVER (PARTITION BY COALESCE(original.LocusID, second.LocusID) ORDER BY original.allele_number) - 1 AS to_allele_number_new
+        CAST(
+            ROW_NUMBER() OVER (PARTITION BY COALESCE(original.LocusID, second.LocusID) ORDER BY original.allele_number) - 1 
+        AS USMALLINT) AS to_allele_number_new
     FROM
         read_parquet('{original_allele}') AS original
     FULL JOIN
@@ -228,10 +230,10 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     COPY (
         WITH subset_alleles AS (
             SELECT
-                CAST(new_alleles.LocusID AS UINTEGER) AS LocusID,
-                CAST(new_alleles.to_allele_number_new AS USMALLINT) AS allele_number,
-                CAST(second.allele_length AS USMALLINT) AS allele_length,
-                CAST(second.sequence AS BLOB) AS sequence
+                new_alleles.LocusID AS LocusID,
+                new_alleles.to_allele_number_new AS allele_number,
+                second.allele_length AS allele_length,
+                second.sequence AS sequence
             FROM
                 read_parquet('{new_alleles}') AS new_alleles
             LEFT JOIN
@@ -304,12 +306,12 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     query = f"""
     COPY(
         SELECT
-            CAST(lookup.to_LocusID AS UINTEGER) AS LocusID,
-            CAST(lookup.to_allele_number_new AS USMALLINT) AS allele_number,
-            CAST(sample.spanning_reads AS USMALLINT) AS spanning_reads,
-            CAST(sample.length_range_lower AS USMALLINT)  AS length_range_lower,
-            CAST(sample.length_range_upper AS USMALLINT) AS length_range_upper,
-            CAST(sample.average_methylation AS FLOAT4) AS average_methylation
+            lookup.to_LocusID AS LocusID,
+            lookup.to_allele_number_new AS allele_number,
+            sample.spanning_reads AS spanning_reads,
+            sample.length_range_lower AS length_range_lower,
+            sample.length_range_upper AS length_range_upper,
+            sample.average_methylation AS average_methylation
         FROM
             read_parquet('{second_sample}') AS sample
         LEFT JOIN
