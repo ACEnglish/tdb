@@ -252,7 +252,14 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     """
     con.execute(query)
     con.close()
-
+    # Note that I could actually append to an existing allele
+    # https://stackoverflow.com/questions/47191675/pandas-write-dataframe-to-parquet-format-with-append
+    # However, this would require moving to fastparquet as the engine (not a huge deal)
+    # But, it may also have implications for the compression
+    # I thought about writing to a non PARQUET, but I don't know if that would
+    # cause problems to duckdb::read_parquet
+    # I would have to 'uncompress' the original allele and make that the intermediate
+    # maybe not a huge deal...?
     shutil.move(tmp, original_allele)
 
 
