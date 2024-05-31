@@ -67,6 +67,11 @@ if [ $test_create_badparam ]; then
     assert_exit_code 1
 fi
 
+run test_create_mergedvcf $tdb create -o $OD/merged_singlevcf.tdb $INDIR/vcf/merged.vcf.gz
+if [ $test_create_mergedvcf ] ; then
+    tdb_check merged_singlevcf.tdb
+fi
+#
 # ------------------------------------------------------------
 #                                 merge
 # ------------------------------------------------------------
