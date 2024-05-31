@@ -66,6 +66,8 @@ def join_loci_tables(original_loci, second_loci, compress):
 
     loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
     comp = ", COMPRESSION GZIP" if compress else ""
+    do_order = "ORDER BY update_LocusID, to_LocusID, chrom, start" if compress else ""
+
     query = f"""
     COPY (
         SELECT
@@ -82,7 +84,7 @@ def join_loci_tables(original_loci, second_loci, compress):
             second.chrom = original.chrom
             AND second.start = original.start
             AND second.end = original.end
-        ORDER BY update_LocusID, to_LocusID, chrom, start
+        {do_order}
     ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
@@ -134,7 +136,6 @@ def update_allele_locusid(second_allele, loci_lookup):
             read_parquet('{loci_lookup}') AS lookup
         ON
             second.LocusID == lookup.update_LocusID
-        ORDER BY LocusID, allele_number
     ) TO '{second_updated_locusid}' (FORMAT PARQUET)
     """
     con.execute(create_updated_allele)
@@ -220,12 +221,15 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
 
     This overwrites original_allele
     """
-    con = duckdb.connect()
+    spillover = truvari.make_temp_filename(suffix=".db")
+    con = duckdb.connect(spillover)
     setup_duck(con)
 
     tmp = truvari.make_temp_filename(suffix=".pq")
 
     comp = ", COMPRESSION GZIP" if compress else ""
+    do_order = "ORDER BY LocusID, allele_number, allele_length, sequence" if compress else ""
+
     query = f"""
     COPY (
         WITH subset_alleles AS (
@@ -242,27 +246,19 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
                 second.LocusID = new_alleles.LocusID
                 AND second.allele_number = new_alleles.update_allele_number
         )
-        SELECT
-            *
+        SELECT *
         FROM read_parquet('{original_allele}')
         UNION ALL
-        SELECT
-            *
+        SELECT *
         FROM subset_alleles
-        ORDER BY LocusID, allele_number, allele_length, sequence
+        {do_order}
     ) TO '{tmp}' (FORMAT PARQUET{comp});
     """
     con.execute(query)
     con.close()
-    # Note that I could actually append to an existing allele
-    # https://stackoverflow.com/questions/47191675/pandas-write-dataframe-to-parquet-format-with-append
-    # However, this would require moving to fastparquet as the engine (not a huge deal)
-    # But, it may also have implications for the compression
-    # I thought about writing to a non PARQUET, but I don't know if that would
-    # cause problems to duckdb::read_parquet
-    # I would have to 'uncompress' the original allele and make that the intermediate
-    # maybe not a huge deal...?
+
     shutil.move(tmp, original_allele)
+    shutil.os.remove(spillover)
 
 
 def create_sample_lookup(loci_lookup, allele_lookup):
@@ -303,6 +299,8 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     setup_duck(con)
 
     comp = ", COMPRESSION GZIP" if compress else ""
+    do_order = "ORDER BY LocusID, allele_number" if compress else ""
+
     query = f"""
     COPY(
         SELECT
@@ -319,7 +317,7 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
         ON
             lookup.update_LocusID = sample.LocusID
             AND lookup.update_allele_number == sample.allele_number
-        ORDER BY LocusID, allele_number
+        {do_order}
     ) TO '{output_path}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
@@ -376,7 +374,7 @@ def merge_main(args):
     parser.add_argument("--threads", default=1, type=int,
                         help="Number of threads (%(default)s)")
     parser.add_argument("--no-compress", action="store_false",
-                        help="Skip compression (faster merge, bigger output)")
+                        help="Don't sort/compress output (faster merge, bigger output)")
     parser.add_argument("--debug", action="store_true",
                         help="Verbose logging")
     parser.add_argument("inputs", metavar="IN", nargs="+",
