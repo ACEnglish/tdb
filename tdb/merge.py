@@ -65,7 +65,7 @@ def join_loci_tables(original_loci, second_loci, compress):
     setup_duck(con)
 
     loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
-
+    comp = ", COMPRESSION GZIP" if compress else ""
     query = f"""
     COPY (
         SELECT
@@ -83,7 +83,7 @@ def join_loci_tables(original_loci, second_loci, compress):
             AND second.start = original.start
             AND second.end = original.end
         ORDER BY update_LocusID, to_LocusID, chrom, start
-    ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET)
+    ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
     con.close()
@@ -223,51 +223,37 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
 
     tmp = truvari.make_temp_filename(suffix=".pq")
 
-    subset_query = f"""
-    COPY (
-        SELECT
-            new_alleles.LocusID AS LocusID,
-            new_alleles.to_allele_number_new AS allele_number,
-            second.allele_length AS allele_length,
-            second.sequence AS sequence
-        FROM
-            read_parquet('{new_alleles}') AS new_alleles
-        LEFT JOIN
-            read_parquet('{second_allele}') AS second
-        ON
-            second.LocusID == new_alleles.LocusID
-            AND second.allele_number == new_alleles.update_allele_number
-        ORDER BY LocusID, allele_number, allele_length, sequence
-    ) TO '{tmp}' (FORMAT PARQUET)
-    """
-    con.execute(subset_query)
-
-    tmp2 = truvari.make_temp_filename(suffix=".pq")
-    # And concatenate (UNION)
     comp = ", COMPRESSION GZIP" if compress else ""
-    concatenate_query = f"""
+    query = f"""
     COPY (
+        WITH subset_alleles AS (
+            SELECT
+                CAST(new_alleles.LocusID AS UINTEGER) AS LocusID,
+                CAST(new_alleles.to_allele_number_new AS USMALLINT) AS allele_number,
+                CAST(second.allele_length AS USMALLINT) AS allele_length,
+                CAST(second.sequence AS BLOB) AS sequence
+            FROM
+                read_parquet('{new_alleles}') AS new_alleles
+            LEFT JOIN
+                read_parquet('{second_allele}') AS second
+            ON
+                second.LocusID = new_alleles.LocusID
+                AND second.allele_number = new_alleles.update_allele_number
+        )
         SELECT
-            CAST(LocusID AS UINTEGER) AS LocusID,
-            CAST(allele_number AS USMALLINT) AS allele_number,
-            CAST(allele_length AS USMALLINT) AS allele_length,
-            CAST(sequence AS BLOB) AS sequence
+            *
         FROM read_parquet('{original_allele}')
         UNION ALL
         SELECT
-            CAST(LocusID AS UINTEGER) AS LocusID,
-            CAST(allele_number AS USMALLINT) AS allele_number,
-            CAST(allele_length AS USMALLINT) AS allele_length,
-            CAST(sequence AS BLOB) AS sequence
-        FROM read_parquet('{tmp}')
+            *
+        FROM subset_alleles
         ORDER BY LocusID, allele_number, allele_length, sequence
-    ) TO '{tmp2}' (FORMAT PARQUET{comp})
+    ) TO '{tmp}' (FORMAT PARQUET{comp});
     """
-    con.execute(concatenate_query)
+    con.execute(query)
     con.close()
 
-    shutil.move(tmp2, original_allele)
-    shutil.os.remove(tmp)
+    shutil.move(tmp, original_allele)
 
 
 def create_sample_lookup(loci_lookup, allele_lookup):
