@@ -10,6 +10,8 @@ from tdb.deid import deid_main
 from tdb.dump import dump_main
 from tdb.merge import merge_main
 
+from tdb.debug_check import debug_check_main
+
 CMDS = {
     "create": create_main,
     "merge": merge_main,
@@ -19,7 +21,7 @@ CMDS = {
 }
 
 
-cmd_str = ", ".join([_ for _ in CMDS.keys()])
+cmd_str = ", ".join(list(CMDS.keys()))
 USAGE = f"""
 tdb v0.2.0 - Tandem repeat database tools
 
@@ -29,6 +31,8 @@ def main():
     """
     Main entrypoint for tdb
     """
+    # Hidden commands
+    CMDS['dbg_eq'] = debug_check_main
     parser = argparse.ArgumentParser(prog="tdb", description=USAGE,
                             formatter_class=argparse.RawDescriptionHelpFormatter)
 

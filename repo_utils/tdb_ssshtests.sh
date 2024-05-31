@@ -25,13 +25,8 @@ fn_md5() {
 tdb_check() {
     # check if parquet files are same
     dir_name=$1
-    assert_equal $(fn_md5 $INDIR/tdb/$dir_name/allele.pq) $(fn_md5 $OD/$dir_name/allele.pq)
-    assert_equal $(fn_md5 $INDIR/tdb/$dir_name/locus.pq) $(fn_md5 $OD/$dir_name/locus.pq)
-    for i in $INDIR/tdb/$dir_name/sample.*.pq
-    do
-        sname=$(basename ${i%.pq} | cut -f2- -d\.)
-        assert_equal $(fn_md5 $INDIR/tdb/$dir_name/sample.${sname}.pq) $(fn_md5 $OD/$dir_name/sample.${sname}.pq)
-    done
+    $tdb dbg_eq $INDIR/tdb/$dir_name $OD/$dir_name/
+    assert_equal $? 0
     assert_exit_code 0
 }
 
@@ -57,38 +52,37 @@ if [ $test_create1 ]; then
     tdb_check HG00438_chr14.tdb
 fi
 
-run test_create2 $tdb create -o $OD/TwoSamps.tdb $INDIR/vcf/HG00741_chr14.vcf.gz $INDIR/vcf/HG02630_chr14.vcf.gz
+run test_create2 $tdb create -o $OD/HG00741_chr14.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
 if [ $test_create2 ]; then
-    tdb_check TwoSamps.tdb
+    tdb_check HG00741_chr14.tdb
 fi
 
-run test_create3 $tdb create -o $OD/TwoWithTDB.tdb $INDIR/vcf/HG00438_chr14.vcf.gz $INDIR/tdb/HG02630_chr14.tdb
+run test_create3 $tdb create -o $OD/HG02630_chr14.tdb $INDIR/vcf/HG02630_chr14.vcf.gz
 if [ $test_create3 ]; then
-    tdb_check TwoWithTDB.tdb
-    assert_exit_code 0
+    tdb_check HG02630_chr14.tdb
 fi
 
-run test_create_badparam $tdb create -o repo_utils $INDIR/vcf/doesntexist $INDIR/vcf/HG00741_chr14.vcf.gz $INDIR/vcf/HG00741_chr14.vcf.gz
+run test_create_badparam $tdb create -o repo_utils $INDIR/vcf/doesntexist
 if [ $test_create_badparam ]; then
     assert_exit_code 1
 fi
 
-
 # ------------------------------------------------------------
-#                               append
+#                                 merge
 # ------------------------------------------------------------
-
-run test_append $tdb create -o $OD/appended.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
-run test_append $tdb append --to $OD/appended.tdb --fr $INDIR/vcf/HG02630_chr14.vcf.gz
-if [ $test_append ]; then
-    tdb_check appended.tdb
+#run test_merge1 $tdb merge -o $OD/merge1.tdb $INDIR/tdbs/some.sample.
+run test_merge $tdb merge -o $OD/merge1.tdb $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00741_chr14.tdb/ $INDIR/tdb/HG02630_chr14.tdb/
+if [ $test_merge ]; then
+    tdb_check merge1.tdb
 fi
 
-run test_append_badparam $tdb append --to doesntexists --fr notreal
-if [ $test_append_badparam ]; then
+run test_bad_merge $tdb merge -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
+if [ $test_bad_merge ]; then
     assert_exit_code 1
 fi
 
+#if [ $test_merge ]; then
+    #assert_equal $(fn_md5 $INDIR/
 # ------------------------------------------------------------
 #                                 query
 # ------------------------------------------------------------
@@ -174,7 +168,6 @@ fi
 # ------------------------------------------------------------
 #                                 dump
 # ------------------------------------------------------------
-
 run test_dump $tdb dump $INDIR/tdb/HG00438_chr14.tdb -o $OD/HG00438.dump.txt
 if [ $test_dump ]; then
     assert_equal $(fn_md5 $INDIR/queries/HG00438.dump.txt) $(fn_md5 $OD/HG00438.dump.txt)

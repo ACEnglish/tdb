@@ -6,7 +6,6 @@ import sys
 import logging
 import argparse
 
-import pysam
 import truvari
 
 import tdb
@@ -27,7 +26,7 @@ def check_args(args):
         logging.error(f"Input {args.input} does not exist")
         check_fail = True
     if not args.input.rstrip('/').endswith((".vcf", ".vcf.gz")):
-        logging.error(f"Unrecognized file extension on {i}. Expected .vcf .vcf.gz")
+        logging.error(f"Unrecognized file extension on {args.input}. Expected .vcf .vcf.gz")
         check_fail = True
     return check_fail
 

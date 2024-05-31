@@ -235,8 +235,9 @@ def vcf_to_tdb(vcf_fn):
     logging.info("locus count:\t%d", len(data))
     data["LocusID"] = range(len(data))
 
-    ret["locus"] = data[["LocusID", "chrom", "start", "end"]].reset_index(
-        drop=True).copy()  # pylint: disable=unsubscriptable-object # pylint/issues/3139
+    # pylint: disable=unsubscriptable-object # pylint/issues/3139
+    ret["locus"] = data[["LocusID", "chrom", "start", "end"]].reset_index(drop=True).copy()
+    # pylint: enable=unsubscriptable-object # pylint/issues/3139
 
     logging.info("Wrangling alleles")
     allele_df = pull_alleles(data)

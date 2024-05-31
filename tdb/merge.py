@@ -17,7 +17,9 @@ GLOBAL_DUCK_SET = []
 
 
 def setup_duck(con):
-    global GLOBAL_DUCK_SET
+    """
+    Set duckdb threads/memory
+    """
     for i in GLOBAL_DUCK_SET:
         con.execute(i)
 
@@ -52,7 +54,7 @@ def check_args(args):
     return check_fail
 
 
-def join_loci_tables(original_loci, second_loci):
+def join_loci_tables(original_loci, second_loci, compress):
     """
     Creates a union of two loci tables
 
@@ -68,7 +70,10 @@ def join_loci_tables(original_loci, second_loci):
     COPY (
         SELECT
             second.locusid AS update_LocusID,
-            original.locusid AS to_LocusID
+            original.locusid AS to_LocusID,
+            COALESCE(original.chrom, second.chrom) AS chrom,
+            COALESCE(original.start, second.start) AS start,
+            COALESCE(original.end, second.end) AS end
         FROM
             read_parquet('{second_loci}') AS second
         FULL JOIN
@@ -77,16 +82,29 @@ def join_loci_tables(original_loci, second_loci):
             second.chrom = original.chrom
             AND second.start = original.start
             AND second.end = original.end
-        ORDER BY update_LocusID, to_LocusID
+        ORDER BY update_LocusID, to_LocusID, chrom, start
     ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET)
     """
-
     con.execute(query)
     con.close()
 
-    # WARNING!! I'm not doing the disjoint solving, yet
-    return loci_lookup_parquet_path
+    union = pd.read_parquet(loci_lookup_parquet_path)
+    mask = union['to_LocusID'].isna()
+    start_id = union['to_LocusID'].max() + 1
+    union.loc[mask, 'to_LocusID'] = np.arange(start_id, start_id + mask.sum())
+    union['to_LocusID'] = union['to_LocusID'].astype(np.uint32)
+    new_loci = mask.sum()
+    if new_loci:
+        logging.info("new loci: %d", new_loci)
 
+    # Write the new locus table
+    to_write = union.rename(columns={"to_LocusID": "LocusID"})[["LocusID", "chrom", "start", "end"]]
+    to_write.to_parquet(original_loci, index=False, compression='gzip' if compress else None)
+
+    # And write the updated lookup
+    union[["update_LocusID", "to_LocusID"]].to_parquet(loci_lookup_parquet_path, index=False)
+
+    return loci_lookup_parquet_path
 
 def update_allele_locusid(second_allele, loci_lookup):
     """
@@ -115,7 +133,6 @@ def update_allele_locusid(second_allele, loci_lookup):
         ORDER BY LocusID, allele_number
     ) TO '{second_updated_locusid}' (FORMAT PARQUET)
     """
-
     con.execute(create_updated_allele)
     con.close()
 
@@ -153,7 +170,6 @@ def create_allele_lookup(original_allele, second_allele):
         ORDER BY LocusID_orig, LocusID_second, update_allele_number, to_allele_number
     ) TO '{partial_lookup}' (FORMAT PARQUET)
     """
-
     con.execute(query)
     con.close()
 
@@ -232,7 +248,7 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     comp = ", COMPRESSION GZIP" if compress else ""
     concatenate_query = f"""
     COPY (
-        SELECT 
+        SELECT
             CAST(LocusID AS UINTEGER) AS LocusID,
             CAST(allele_number AS USMALLINT) AS allele_number,
             CAST(allele_length AS USMALLINT) AS allele_length,
@@ -248,7 +264,6 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
         ORDER BY LocusID, allele_number, allele_length, sequence
     ) TO '{tmp2}' (FORMAT PARQUET{comp})
     """
-
     con.execute(concatenate_query)
     con.close()
 
@@ -326,8 +341,7 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     Automatically removes the temporary flies it creates
     The tdbs should be get_tdb_filenames or whatever it's called
     """
-    loci_lookup = join_loci_tables(tdb_1['locus'], tdb_2['locus'])
-    # I'm still not writing joined locus.
+    loci_lookup = join_loci_tables(tdb_1['locus'], tdb_2['locus'], allele_gz)
     second_allele_locus_updated = update_allele_locusid(
         tdb_2['allele'], loci_lookup)
     partial_lookup = create_allele_lookup(
@@ -353,7 +367,9 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
 
 
 def merge_main(args):
-    global GLOBAL_DUCK_SET
+    """
+    Merge multiple tdbs
+    """
     parser = argparse.ArgumentParser(prog="tdb merge", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     # parser.add_argument("--into", merge into the first tdb listed instead of copying

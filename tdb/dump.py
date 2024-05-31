@@ -2,8 +2,8 @@
 Join all tables in a tdb and dump to a flat tsv file
 """
 import logging
-import truvari
 import argparse
+import truvari
 import pandas as pd
 
 import tdb

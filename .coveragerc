@@ -1,0 +1,4 @@
+[run]
+concurrency = multiprocessing
+branch = true
+omit = debug_check.py

@@ -5,7 +5,6 @@ import os
 import sys
 import argparse
 
-import joblib
 import numpy as np
 import pandas as pd
 import tdb
@@ -195,7 +194,7 @@ def methyl(data, *args, **kwargs):
     """
     def cpg_stats(seq):
         #seq = df[0]
-        obs = seq.count(b"CG" if isinstance(seq, bytes) else "CG") 
+        obs = seq.count(b"CG" if isinstance(seq, bytes) else "CG")
         c_count = seq.count(b"C" if isinstance(seq, bytes) else "C")
         g_count = seq.count(b"G" if isinstance(seq, bytes) else "G")
         exp = (c_count * g_count) / len(seq) if len(seq) else 0
