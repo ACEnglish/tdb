@@ -3,6 +3,7 @@ Basic queries on a tdb
 """
 import os
 import sys
+import random
 import argparse
 
 import numpy as np
@@ -216,6 +217,71 @@ def methyl(data, *args, **kwargs):
 
     return pd.concat(parts).drop_duplicates()
 
+@tdb_opener
+def singletons(data, *args, **kwargs):
+    """
+    Count the number of singletons per-sample
+    """
+    a_cnts = allele_count(data).reset_index().set_index(["LocusID", "allele_number"])
+    singletons = a_cnts[a_cnts['AC'] == 1].index
+    parts = []
+    for samp, table in data['sample'].items():
+        index = table.set_index(["LocusID", "allele_number"]).index
+        parts.append([samp, index.isin(singletons).sum(), len(table)])
+    return pd.DataFrame(parts, columns=["sample", "num_singletons", "num_alleles"])
+
+def allele_saturation(dbname, num_perm=10, *args, **kwargs):
+    """
+    Perform an allele saturation experiment
+    """
+    names = tdb.get_tdb_filenames(dbname)
+    # We only need the keys to the alleles, none of the other information
+    all_alleles = (pd.read_parquet(names['allele'], columns=["LocusID", "allele_number"])
+                    .set_index(["LocusID", "allele_number"]))
+    samples = list(names['sample'].keys())
+
+    # This is for deterministic functional tests
+    if "TDB_SEED" in os.environ and os.environ["TDB_SEED"] == "123":
+        seed = 123
+    else:
+        seed = None
+
+    m_sets = {}
+    parts = []
+    pd.set_option('future.no_silent_downcasting', True)
+    for p in range(num_perm):
+        if seed:
+            random.seed(seed + p)
+        random.shuffle(samples)
+        # At this point, we've seen none of the alleles
+        all_alleles['seen'] = False
+        seen_array = all_alleles['seen'].values
+        total_seen = 0
+        for samp in samples:
+            if samp not in m_sets:
+                fn = names['sample'][samp]
+                data = (pd.read_parquet(fn, columns=["LocusID", "allele_number"])
+                        .sort_values(by=["LocusID", "allele_number"])
+                        .drop_duplicates()
+                        .set_index(["LocusID", "allele_number"]))
+                data['seen'] = True
+                # We align the sample's alleles to the all_alleles...
+                _, data = all_alleles.align(data)
+                m_sets[samp] = data['seen'].fillna(False).astype(bool).values
+
+            samp_index = m_sets[samp]
+            # ... so that we can quickly update which alleles we've seen
+            seen_array |= samp_index
+
+            new_total = seen_array.sum()
+            new_alleles = new_total - total_seen
+
+            parts.append([p, samp, new_alleles, new_total])
+            total_seen = new_total
+    
+    return pd.DataFrame(parts, columns=["perm", "sample", "new_alleles", "total_alleles"])
+
+
 QS = {"allele_cnts": allele_count,
       "allele_cnts_bylen": allele_count_length,
       "allele_seqs": allele_seqs,
@@ -225,6 +291,8 @@ QS = {"allele_cnts": allele_count,
       "methyl": methyl,
       "comp_poly_score": composition_polymorphism_score,
       "len_poly_score": length_polymorphism_score,
+      "singletons": singletons,
+      "saturation": allele_saturation,
 }
 
 USAGE = "tdb queries:\n" + "\n".join([f"    {k:9}: {t.__doc__.strip()}" for k,t in QS.items()])

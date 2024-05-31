@@ -146,6 +146,18 @@ if [ $test_q_len_poly_score ]; then
     assert_exit_code 0
 fi
 
+TDB_SEED=123 run test_q_saturation $tdb query saturation $INDIR/tdb/merge1.tdb -o $OD/saturation.tsv
+if [ $test_saturation ]; then
+    assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
+    assert_exit_code 0
+fi
+
+run test_q_singletons $tdb query singletons $INDIR/tdb/merge1.tdb -o $OD/singletons.tsv
+if [ $test_singletons ]; then
+    assert_equal $(fn_md5 $INDIR/queries/singletons.tsv) $(fn_md5 $OD/singletons.tsv)
+    assert_exit_code 0
+fi
+
 # ------------------------------------------------------------
 #                                 deid
 # ------------------------------------------------------------
