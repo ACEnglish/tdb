@@ -223,11 +223,11 @@ def singletons(data, *args, **kwargs):
     Count the number of singletons per-sample
     """
     a_cnts = allele_count(data).reset_index().set_index(["LocusID", "allele_number"])
-    singletons = a_cnts[a_cnts['AC'] == 1].index
+    singles = a_cnts[a_cnts['AC'] == 1].index
     parts = []
     for samp, table in data['sample'].items():
         index = table.set_index(["LocusID", "allele_number"]).index
-        parts.append([samp, index.isin(singletons).sum(), len(table)])
+        parts.append([samp, index.isin(singles).sum(), len(table)])
     return pd.DataFrame(parts, columns=["sample", "num_singletons", "num_alleles"])
 
 def allele_saturation(dbname, num_perm=10, *args, **kwargs):
@@ -278,7 +278,7 @@ def allele_saturation(dbname, num_perm=10, *args, **kwargs):
 
             parts.append([p, samp, new_alleles, new_total])
             total_seen = new_total
-    
+
     return pd.DataFrame(parts, columns=["perm", "sample", "new_alleles", "total_alleles"])
 
 

@@ -57,6 +57,21 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
 
     If a subset of loci are loaded via lfilters, then a filter of ('LocusID', 'in', loaded_locusids)
     is added to afilters and sfilters
+
+    Example:
+        >>> import tdb
+        >>> loci = [("LocusID", "in", [23, 32, 77])] # Only load these loci
+        >>> alleles = [("allele_number", '>', 0)] # And only their non-ref alleles
+        >>> db = tdb.load_tdb("repo_utils/test_files/tdb/merge1.tdb", \
+                lfilters=loci, \
+                afilters=alleles, \
+                samples=["HG02630"])
+        >>> len(db['locus'])
+        3
+        >>> len(db['allele'])
+        6
+        >>> len(db['sample'])
+        1
     """
     def add_filter(filts, n_filt):
         """
@@ -111,17 +126,6 @@ def set_tdb_types(d):
 
     d['locus'] = d['locus'].astype(l_types)
     d['allele'] = d['allele'].astype(a_types)
-
-    # last I checked, these types couldn't handle nones
-    # s_types = {"LocusID": np.uint32,
-    #           "allele_number": np.uint16,
-    #           "spanning_reads": np.uint16,
-    #           "length_range_lower": np.uint16,
-    #           "length_range_upper": np.uint16,
-    #           "average_methylation": np.float32}
-
-    # for samp, val in d['sample'].items():
-    #    d['sample'][samp] = val.astype(s_types)
 
 
 def write_samples(samples, output):
