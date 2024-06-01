@@ -30,11 +30,20 @@ def check_args(args):
     """
     check_fail = False
 
-    if os.path.exists(args.output):
+    if (args.output is None) == (args.into is None):
+        logging.error(f"Only one of --output or --into can be specified")
+        check_fail = True
+    if args.output and os.path.exists(args.output):
         logging.error(f"Output {args.output} already exists")
         check_fail = True
-    if not args.output.endswith(".tdb"):
+    if args.into and not os.path.exists(args.into):
+        logging.error(f"Output {args.into} does not exist")
+        check_fail = True
+    if args.output and not args.output.endswith(".tdb"):
         logging.error(f"Output {args.output} must end with `.tdb`")
+        check_fail = True
+    if args.into and not args.into.endswith(".tdb"):
+        logging.error(f"Output {args.into} must end with `.tdb`")
         check_fail = True
     seen_samples = {}
     for i in args.inputs:
@@ -68,8 +77,12 @@ def join_loci_tables(original_loci, second_loci, compress):
     loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
     up_locus = truvari.make_temp_filename(suffix=".pq")
 
-    comp = ", COMPRESSION GZIP" if compress else ""
-    do_order = "ORDER BY update_LocusID, to_LocusID, chrom, start" if compress else ""
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY update_LocusID, to_LocusID, chrom, start"
+        logging.info("Sorting/compressing locus table")
 
     query = f"""
     COPY (
@@ -230,8 +243,12 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
 
     up_allele = truvari.make_temp_filename(suffix=".pq")
 
-    comp = ", COMPRESSION GZIP" if compress else ""
-    do_order = "ORDER BY LocusID, allele_number, allele_length, sequence" if compress else ""
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY LocusID, allele_number, allele_length, sequence"
+        logging.info("Sorting/compressing allele table")
 
     query = f"""
     COPY (
@@ -379,8 +396,10 @@ def merge_main(args):
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     # parser.add_argument("--into", merge into the first tdb listed instead of copying
     # it into the output. This will replace append
-    parser.add_argument("-o", "--output", metavar="OUT", required=True,
+    parser.add_argument("-o", "--output", metavar="OUT",
                         help="Output tdb directory")
+    parser.add_argument("--into", metavar="INTO",
+                        help="Existing tdb directory to merge into")
     parser.add_argument("--mem", default=None,
                         help="Maximum memory in GB (off)")
     parser.add_argument("--threads", default=1, type=int,
@@ -403,14 +422,21 @@ def merge_main(args):
     if args.mem:
         GLOBAL_DUCK_SET.append(f"SET memory_limit = '{args.mem}GB';")
 
-    num_tdbs = len(args.inputs)
-    first_tdb_name = args.inputs.pop(0)
-    logging.info("Consolidating %s (1/%d)", first_tdb_name, num_tdbs)
-    shutil.copytree(first_tdb_name, args.output)
-    dest_tdb = tdb.get_tdb_filenames(args.output)
+    if args.output is not None:
+        logging.info("Consolidating %s (1/%d)", args.inputs[0], len(args.inputs))
+        shutil.copytree(args.inputs[0], args.output)
+        args.inputs.pop(0)
+        dest_tdb = tdb.get_tdb_filenames(args.output)
+        # Correction for counting number of databases
+        correction = 1
+    else:
+        dest_tdb = tdb.get_tdb_filenames(args.into)
+        correction = 0
+
+    num_tdbs = len(args.inputs) + correction
 
     for pos, i in enumerate(args.inputs):
-        pos += 2
+        pos += 1 + correction
         logging.info("Consolidating %s (%d/%d)", i, pos, num_tdbs)
         update_tdb = tdb.get_tdb_filenames(i)
         acomp = args.no_compress and pos == num_tdbs
