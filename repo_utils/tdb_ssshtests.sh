@@ -71,23 +71,27 @@ run test_create_mergedvcf $tdb create -o $OD/merged_singlevcf.tdb $INDIR/vcf/mer
 if [ $test_create_mergedvcf ] ; then
     tdb_check merged_singlevcf.tdb
 fi
-#
+
 # ------------------------------------------------------------
 #                                 merge
 # ------------------------------------------------------------
-#run test_merge1 $tdb merge -o $OD/merge1.tdb $INDIR/tdbs/some.sample.
+
 run test_merge $tdb merge -o $OD/merge1.tdb $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00741_chr14.tdb/ $INDIR/tdb/HG02630_chr14.tdb/
 if [ $test_merge ]; then
     tdb_check merge1.tdb
 fi
 
-run test_bad_merge $tdb merge -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
+run test_merge_into $tdb create -o $OD/merge_into.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
+run test_merge_into $tdb merge --no-compress --mem 1 --into $OD/merge_into.tdb $INDIR/tdb/HG02630_chr14.tdb $INDIR/tdb/HG00438_chr14.tdb
+if [ $test_merge_into ]; then
+    tdb_check merge_into.tdb
+fi
+
+run test_bad_merge $tdb merge --into $OD/mergex -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
 if [ $test_bad_merge ]; then
     assert_exit_code 1
 fi
 
-#if [ $test_merge ]; then
-    #assert_equal $(fn_md5 $INDIR/
 # ------------------------------------------------------------
 #                                 query
 # ------------------------------------------------------------

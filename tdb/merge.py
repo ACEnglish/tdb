@@ -31,7 +31,7 @@ def check_args(args):
     check_fail = False
 
     if (args.output is None) == (args.into is None):
-        logging.error(f"Only one of --output or --into can be specified")
+        logging.error("Only one of --output or --into can be specified")
         check_fail = True
     if args.output and os.path.exists(args.output):
         logging.error(f"Output {args.output} already exists")
@@ -317,7 +317,7 @@ def update_sample_table(second_sample, sample_lookup, compress):
     """
     con = duckdb.connect()
     setup_duck(con)
-    
+
     output_path = truvari.make_temp_filename(suffix=".pq")
     comp = ", COMPRESSION GZIP" if compress else ""
     do_order = "ORDER BY LocusID, allele_number" if compress else ""
