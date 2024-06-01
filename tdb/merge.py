@@ -60,11 +60,14 @@ def join_loci_tables(original_loci, second_loci, compress):
 
     Returns a temporary filename holding the joined LocusIDs as
     update_LocusID to_LocusID
+    as well as a path the the updated locus table which should be moved
     """
     con = duckdb.connect()
     setup_duck(con)
 
     loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
+    up_locus = truvari.make_temp_filename(suffix=".pq")
+
     comp = ", COMPRESSION GZIP" if compress else ""
     do_order = "ORDER BY update_LocusID, to_LocusID, chrom, start" if compress else ""
 
@@ -102,14 +105,14 @@ def join_loci_tables(original_loci, second_loci, compress):
     # Write the new locus table
     to_write = union.rename(columns={"to_LocusID": "LocusID"})[
         ["LocusID", "chrom", "start", "end"]]
-    to_write.to_parquet(original_loci, index=False,
+    to_write.to_parquet(up_locus, index=False,
                         compression='gzip' if compress else None)
 
     # And write the updated lookup
     union[["update_LocusID", "to_LocusID"]].to_parquet(
         loci_lookup_parquet_path, index=False)
 
-    return loci_lookup_parquet_path
+    return loci_lookup_parquet_path, up_locus
 
 
 def update_allele_locusid(second_allele, loci_lookup):
@@ -204,7 +207,7 @@ def create_allele_lookup(original_allele, second_allele):
     new_allele_count = con.execute("""
         SELECT COUNT(*) AS row_count
         FROM lookup
-        WHERE update_allele_number IS NOT NULL;
+        WHERE to_allele_number IS NULL;
         """).fetchone()[0]
     logging.info("new alleles: %d", new_allele_count)
 
@@ -219,13 +222,13 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     Only the subset of new alleles in second alleles are pulled.
     The new alleles are renumbered according to `update_allele_numbers`
 
-    This overwrites original_allele
+    Returns a path to a new allele table which should be moved when ready
     """
     spillover = truvari.make_temp_filename(suffix=".db")
     con = duckdb.connect(spillover)
     setup_duck(con)
 
-    tmp = truvari.make_temp_filename(suffix=".pq")
+    up_allele = truvari.make_temp_filename(suffix=".pq")
 
     comp = ", COMPRESSION GZIP" if compress else ""
     do_order = "ORDER BY LocusID, allele_number, allele_length, sequence" if compress else ""
@@ -252,13 +255,13 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
         SELECT *
         FROM subset_alleles
         {do_order}
-    ) TO '{tmp}' (FORMAT PARQUET{comp});
+    ) TO '{up_allele}' (FORMAT PARQUET{comp});
     """
     con.execute(query)
     con.close()
 
-    shutil.move(tmp, original_allele)
     shutil.os.remove(spillover)
+    return up_allele
 
 
 def create_sample_lookup(loci_lookup, allele_lookup):
@@ -289,7 +292,7 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     return sample_lookup
 
 
-def update_sample_table(second_sample, sample_lookup, output_path, compress):
+def update_sample_table(second_sample, sample_lookup, compress):
     """
     Update the LocusID and allele_number of a second_sample to the consolidated ids.
 
@@ -297,7 +300,8 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     """
     con = duckdb.connect()
     setup_duck(con)
-
+    
+    output_path = truvari.make_temp_filename(suffix=".pq")
     comp = ", COMPRESSION GZIP" if compress else ""
     do_order = "ORDER BY LocusID, allele_number" if compress else ""
 
@@ -322,6 +326,7 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     """
     con.execute(query)
     con.close()
+    return output_path
 
 
 def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
@@ -333,22 +338,29 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     Automatically removes the temporary flies it creates
     The tdbs should be get_tdb_filenames or whatever it's called
     """
-    loci_lookup = join_loci_tables(tdb_1['locus'], tdb_2['locus'], allele_gz)
+    loci_lookup, up_locus = join_loci_tables(tdb_1['locus'], tdb_2['locus'], allele_gz)
     second_allele_locus_updated = update_allele_locusid(tdb_2['allele'],
                                                         loci_lookup)
     new_alleles, allele_lookup = create_allele_lookup(tdb_1['allele'],
                                                       second_allele_locus_updated)
     logging.debug("Consolidating alleles")
-    consolidate_alleles(tdb_1['allele'], second_allele_locus_updated,
+    up_allele = consolidate_alleles(tdb_1['allele'], second_allele_locus_updated,
                         new_alleles, allele_gz)
     logging.debug("Creating sample lookup")
     sample_lookup = create_sample_lookup(loci_lookup, allele_lookup)
 
     output_dir = os.path.dirname(tdb_1['locus'])
-    logging.debug("Moving sample")
+    logging.debug("Updating samples")
+    up_samples = {}
     for name, second_sample in tdb_2['sample'].items():
+        up_samples[name] = update_sample_table(second_sample, sample_lookup, samp_gz)
+
+    logging.debug("putting into output")
+    shutil.move(up_locus, tdb_1['locus'])
+    shutil.move(up_allele, tdb_1['allele'])
+    for name, tmp_path in up_samples.items():
         output_name = os.path.join(output_dir, f"sample.{name}.pq")
-        update_sample_table(second_sample, sample_lookup, output_name, samp_gz)
+        shutil.move(tmp_path, output_name)
 
     # Clean up after yourself
     # You know, if you give them static names you won't need to clean but once...
