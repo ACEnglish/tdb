@@ -178,7 +178,7 @@ def allele_pusher(con, dbname):
         loci_lookup.dbname = '{dbname}'
         AND loci_lookup.update_LocusID = allele.LocusID
     """
-    local_con.execute(query).fetchall()
+    local_con.execute(query)
 
 def allele_puller(con, dbname, num_loci):
     logging.debug("pulling %d alleles from %s", num_loci, dbname)
@@ -201,7 +201,7 @@ def allele_puller(con, dbname, num_loci):
         WHERE
             allele_pull.dbname = '{dbname}';
     """
-    local_con.execute(query).fetchall()
+    local_con.execute(query)
     logging.debug("pulled alleles from %s", dbname)
 
 
@@ -453,3 +453,4 @@ def bigmerge_main(args):
     consolidate_sample(con, args.inputs, args.output, args.no_compress, args.threads)
 
     con.close()
+    logging.info("Finished")
