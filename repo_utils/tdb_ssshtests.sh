@@ -12,7 +12,7 @@ COVERAGE_RCFILE=.coveragerc
 rm -rf $OD
 mkdir -p $OD
 
-tdb="coverage run --concurrency=multiprocessing -p -m tdb.__main__"
+tdb="coverage run --concurrency=multiprocessing,thread -p -m tdb.__main__"
 # ------------------------------------------------------------
 #                                 test helpers
 # ------------------------------------------------------------

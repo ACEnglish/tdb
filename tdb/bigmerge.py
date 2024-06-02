@@ -152,6 +152,34 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     con.execute(query)
 
 
+def allele_pusher(con, dbname):
+    """
+    Read input tdb alleles for consolidation
+    """
+    local_con = con.cursor()
+
+    names = tdb.get_tdb_filenames(dbname)
+    allele_pq = names['allele']
+    query = f"""
+    INSERT INTO allele_lookup (dbname, update_LocusID, to_LocusID, update_allele_number, to_allele_number, to_allele_number_new, on_Ahash)
+    SELECT
+        '{dbname}' AS dbname,
+        allele.LocusID AS update_LocusID,
+        loci_lookup.to_LocusID_new as to_LocusID,
+        allele.allele_number as update_allele_number,
+        NULL AS to_allele_number,
+        NULL AS to_allele_number_new,
+        hash(CAST(allele.sequence AS TEXT)) AS on_Ahash
+    FROM
+        read_parquet('{allele_pq}') AS allele
+    JOIN
+        loci_lookup
+    ON
+        loci_lookup.dbname = '{dbname}'
+        AND loci_lookup.update_LocusID = allele.LocusID
+    """
+    local_con.execute(query).fetchall()
+
 def allele_puller(con, dbname, num_loci):
     logging.debug("pulling %d alleles from %s", num_loci, dbname)
     local_con = con.cursor()
@@ -201,31 +229,15 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
         sequence BLOB,
     );
     """
-
     con.execute(query)
 
-    for dbname in db_paths:
-        names = tdb.get_tdb_filenames(dbname)
-        allele_pq = names['allele']
-        query = f"""
-        INSERT INTO allele_lookup (dbname, update_LocusID, to_LocusID, update_allele_number, to_allele_number, to_allele_number_new, on_Ahash)
-        SELECT
-            '{dbname}' AS dbname,
-            allele.LocusID AS update_LocusID,
-            loci_lookup.to_LocusID_new as to_LocusID,
-            allele.allele_number as update_allele_number,
-            NULL AS to_allele_number,
-            NULL AS to_allele_number_new,
-            hash(CAST(allele.sequence AS TEXT)) AS on_Ahash
-        FROM
-            read_parquet('{allele_pq}') AS allele
-        JOIN
-            loci_lookup
-        ON
-            loci_lookup.dbname = '{dbname}'
-            AND loci_lookup.update_LocusID = allele.LocusID
-        """
-        con.execute(query)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [executor.submit(allele_pusher, con, dbname) for dbname in db_paths]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()  # This will raise an exception if the task failed
+            except Exception as e:
+                logging.error(f"An error occurred: {e}")
 
     # Set what the allele_number should be set to_ by looking at the destination database
     ba = base['allele']
