@@ -40,7 +40,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
             INSERT INTO loci_lookup (dbname, on_Lhash, update_LocusID, to_LocusID)
             SELECT
                 '{dbname}' AS dbname,
-                md5(locus.chrom || '-' || locus.start || '-' || locus.end) AS on_Lhash,
+                hash(locus.chrom || '-' || locus.start || '-' || locus.end) AS on_Lhash,
                 locus.LocusID AS update_LocusID,
                 NULL AS to_LocusID,
             FROM
@@ -54,7 +54,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
         UPDATE loci_lookup
         SET to_LocusID = dest.LocusID
         FROM read_parquet('{bl}') AS dest
-        WHERE loci_lookup.on_Lhash = md5(dest.chrom || '-' || dest.start || '-' || dest.end)
+        WHERE loci_lookup.on_Lhash = hash(dest.chrom || '-' || dest.start || '-' || dest.end)
     """
     con.execute(query)
 
@@ -129,7 +129,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
                 ON loci_pull.dbname = loci_lookup.dbname AND loci_pull.on_Lhash = loci_lookup.on_Lhash
             JOIN
                 read_parquet('{m_locus}') AS original
-                ON loci_lookup.on_Lhash = md5(original.chrom || '-' || original.start || '-' || original."end")
+                ON loci_lookup.on_Lhash = hash(original.chrom || '-' || original.start || '-' || original."end")
             WHERE
                 loci_pull.dbname = '{dbname}';
         """
@@ -185,7 +185,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
             allele.allele_number as update_allele_number,
             NULL AS to_allele_number,
             NULL AS to_allele_number_new,
-            md5(CAST(allele.sequence AS TEXT)) AS on_Ahash
+            hash(CAST(allele.sequence AS TEXT)) AS on_Ahash
         FROM
             read_parquet('{allele_pq}') AS allele
         JOIN
@@ -199,12 +199,12 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     # Set what the allele_number should be set to_ by looking at the destination database
     ba = base['allele']
     query = f"""
-        UPDATE allele_lookup
-        SET to_allele_number = dest.allele_number
-        FROM read_parquet('{ba}') AS dest
-        WHERE
-            allele_lookup.to_LocusID = dest.LocusID
-            AND allele_lookup.on_Ahash = md5(CAST(dest.sequence AS TEXT))
+    UPDATE allele_lookup
+    SET to_allele_number = dest.allele_number
+    FROM read_parquet('{ba}') AS dest
+    WHERE
+        allele_lookup.to_LocusID = dest.LocusID
+        AND allele_lookup.on_Ahash = hash(CAST(dest.sequence AS TEXT))
     """
     con.execute(query)
 
@@ -255,18 +255,6 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     """
     to_pull = con.execute(query).fetchall()
 
-    # This might be helpful for MASSIVE merges. But probably not
-    #con.execute("""
-    #CREATE INDEX
-        #idx_allele_pull
-    #ON allele_pull(dbname, update_LocusID, update_allele_number);
-    #
-    #CREATE INDEX
-        #idx_allele_lookup
-    #ON allele_lookup(dbname, update_LocusID, update_allele_number);
-    #""")
-
-    # Make a temporary file holding the new allele entries
     query = """
     CREATE TABLE new_alleles (
         LocusID UINTEGER,
@@ -293,7 +281,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
                 allele_pull
             JOIN
                 read_parquet('{m_allele}') AS original
-                ON allele_pull.update_LocusID = original.LocusID
+            ON allele_pull.update_LocusID = original.LocusID
                 AND allele_pull.update_allele_number = original.allele_number
             WHERE
                 allele_pull.dbname = '{dbname}';
