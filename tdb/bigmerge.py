@@ -8,6 +8,7 @@ import sys
 import shutil
 import logging
 import argparse
+import concurrent.futures
 
 import duckdb
 import truvari
@@ -150,7 +151,32 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     """
     con.execute(query)
 
-def consolidate_allele(con, db_paths, output_dir, compress=False):
+
+def allele_puller(con, dbname, num_loci):
+    logging.debug("pulling %d from %s", num_loci, dbname)
+    local_con = con.cursor()
+    names = tdb.get_tdb_filenames(dbname)
+    m_allele = names['allele']
+    query = f"""
+        INSERT INTO new_alleles (LocusID, allele_number, allele_length, sequence)
+        SELECT
+            allele_pull.to_LocusID AS LocusID,
+            allele_pull.to_allele_number_new AS allele_number,
+            original.allele_length,
+            original.sequence
+        FROM
+            allele_pull
+        JOIN
+            read_parquet('{m_allele}') AS original
+        ON allele_pull.update_LocusID = original.LocusID
+            AND allele_pull.update_allele_number = original.allele_number
+        WHERE
+            allele_pull.dbname = '{dbname}';
+    """
+    local_con.execute(query).fetchall()
+
+
+def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     """
     Consolidates alleles using db_paths[0] as the baseline
     """
@@ -243,7 +269,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     logging.debug("figuring out alleles to pull")
     query = """
     CREATE TABLE allele_pull AS
-    SELECT DISTINCT (to_LocusID, to_allele_number_new)
+    SELECT DISTINCT ON (to_LocusID, to_allele_number_new)
         dbname,
         to_LocusID,
         to_allele_number_new,
@@ -260,27 +286,15 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     to_pull = con.execute(query).fetchall()
 
     logging.info("Merging allele")
-    for dbname, num_loci in to_pull:
-        logging.debug("pulling %d from %s", num_loci, dbname)
-        names = tdb.get_tdb_filenames(dbname)
-        m_allele = names['allele']
-        query = f"""
-            INSERT INTO new_alleles (LocusID, allele_number, allele_length, sequence)
-            SELECT
-                allele_pull.to_LocusID AS LocusID,
-                allele_pull.to_allele_number_new AS allele_number,
-                original.allele_length,
-                original.sequence,
-            FROM
-                allele_pull
-            JOIN
-                read_parquet('{m_allele}') AS original
-            ON allele_pull.update_LocusID = original.LocusID
-                AND allele_pull.update_allele_number = original.allele_number
-            WHERE
-                allele_pull.dbname = '{dbname}';
-        """
-        con.execute(query)
+    con.execute("SET threads = 1;")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [executor.submit(allele_puller, con, dbname, num_loci) for dbname, num_loci in to_pull]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()  # This will raise an exception if the task failed
+            except Exception as e:
+                logging.error(f"An error occurred: {e}")
+    con.execute(f"SET threads = {threads};")
 
     comp = ""
     do_order = ""
@@ -301,7 +315,42 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     """
     con.execute(query)
 
-def consolidate_sample(con, db_names, output_dir, compress=False):
+def sample_puller(con, dbname, output_dir, compress):
+    """
+    Translates samples to new ids and moves
+    """
+    local_con = con.cursor()
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY LocusID, allele_number"
+
+    files = tdb.get_tdb_filenames(dbname)
+    for _, sample_pq in files['sample'].items():
+        out_name = os.path.join(output_dir, os.path.basename(sample_pq))
+        query = f"""
+            COPY (
+                SELECT
+                    allele_lookup.to_LocusID as LocusID,
+                    allele_lookup.to_allele_number_new as allele_number,
+                    sample.spanning_reads,
+                    sample.length_range_lower,
+                    sample.length_range_upper,
+                    sample.average_methylation,
+                FROM read_parquet('{sample_pq}') as sample
+                JOIN allele_lookup
+                ON
+                    allele_lookup.dbname == '{dbname}'
+                    AND allele_lookup.update_LocusID == sample.LocusID
+                    AND allele_lookup.update_allele_number == sample.allele_number
+                {do_order}
+            ) TO '{out_name}' (FORMAT PARQUET{comp})
+        """
+        con.execute(query).fetchall()
+
+
+def consolidate_sample(con, db_names, output_dir, compress=False, threads=1):
     """
     Translate each sample table to the new database's keys
     """
@@ -313,35 +362,15 @@ def consolidate_sample(con, db_names, output_dir, compress=False):
         shutil.copy(sample_pq, out_name)
 
     # And then update the rest
-    comp = ""
-    do_order = ""
-    if compress:
-        comp = ", COMPRESSION GZIP"
-        do_order = "ORDER BY LocusID, allele_number"
-
-    for dbname in db_names[1:]:
-        files = tdb.get_tdb_filenames(dbname)
-        for _, sample_pq in files['sample'].items():
-            out_name = os.path.join(output_dir, os.path.basename(sample_pq))
-            query = f"""
-                COPY (
-                    SELECT
-                        allele_lookup.to_LocusID as LocusID,
-                        allele_lookup.to_allele_number_new as allele_number,
-                        sample.spanning_reads,
-                        sample.length_range_lower,
-                        sample.length_range_upper,
-                        sample.average_methylation,
-                    FROM read_parquet('{sample_pq}') as sample
-                    JOIN allele_lookup
-                    ON
-                        allele_lookup.dbname == '{dbname}'
-                        AND allele_lookup.update_LocusID == sample.LocusID
-                        AND allele_lookup.update_allele_number == sample.allele_number
-                    {do_order}
-                ) TO '{out_name}' (FORMAT PARQUET{comp})
-            """
-            con.execute(query)
+    con.execute("SET threads = 1;")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [executor.submit(sample_puller, con, dbname, output_dir, compress) for dbname in db_names[1:]]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()  # This will raise an exception if the task failed
+            except Exception as e:
+                logging.error(f"An error occurred: {e}")
+    con.execute(f"SET threads = {threads};")
 
 
 def check_args(args):
@@ -410,7 +439,7 @@ def bigmerge_main(args):
         con.execute(f"SET memory_limit = '{args.mem}GB';")
 
     consolidate_locus(con, args.inputs, args.output, args.no_compress)
-    consolidate_allele(con, args.inputs, args.output, args.no_compress)
-    consolidate_sample(con, args.inputs, args.output, args.no_compress)
+    consolidate_allele(con, args.inputs, args.output, args.no_compress, args.threads)
+    consolidate_sample(con, args.inputs, args.output, args.no_compress, args.threads)
 
     con.close()
