@@ -9,13 +9,13 @@ from tdb.query import query_main
 from tdb.deid import deid_main
 from tdb.dump import dump_main
 from tdb.merge import merge_main
-from tdb.merge_batch import merge_batch_main
+from tdb.bigmerge import bigmerge_main
 from tdb.debug_check import debug_check_main
 
 CMDS = {
     "create": create_main,
     "merge": merge_main,
-    "bigmerge": merge_batch_main,
+    "bigmerge": bigmerge_main,
     "query": query_main,
     "deid": deid_main,
     "dump": dump_main,

@@ -25,10 +25,17 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     query = """
     CREATE TABLE loci_lookup (
         dbname TEXT,
-        on_Lhash TEXT,
+        on_Lhash UBIGINT,
         update_LocusID UINTEGER,
         to_LocusID UINTEGER,
         to_LocusID_new UINTEGER,
+    );
+
+    CREATE TABLE new_loci (
+        LocusID UINTEGER,
+        chrom TEXT,
+        start UINTEGER,
+        "end" UINTEGER,
     );
     """
     con.execute(query)
@@ -100,18 +107,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     """
     to_pull = con.execute(query).fetchall()
 
-    # Make a temporary file holding the new loci entries
-    query = """
-    CREATE TABLE new_loci (
-        LocusID UINTEGER,
-        chrom TEXT,
-        start UINTEGER,
-        "end" UINTEGER,
-    );
-    """
-    con.execute(query)
-
-    logging.info("Updating locus")
+    logging.info("Merging locus")
     for dbname, in to_pull:
         names = tdb.get_tdb_filenames(dbname)
         m_locus = names['locus']
@@ -158,7 +154,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     """
     Consolidates alleles using db_paths[0] as the baseline
     """
-    logging.info("Consolidating allele")
+    logging.info("Consolidating allele tables")
     base = tdb.get_tdb_filenames(db_paths[0])
     query = """
     CREATE TABLE allele_lookup (
@@ -168,9 +164,17 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
         update_allele_number USMALLINT,
         to_allele_number USMALLINT,
         to_allele_number_new USMALLINT,
-        on_Ahash TEXT,
+        on_Ahash UBIGINT,
+    );
+
+    CREATE TABLE new_alleles (
+        LocusID UINTEGER,
+        allele_number USMALLINT,
+        allele_length USMALLINT,
+        sequence BLOB,
     );
     """
+
     con.execute(query)
 
     for dbname in db_paths:
@@ -239,7 +243,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     logging.debug("figuring out alleles to pull")
     query = """
     CREATE TABLE allele_pull AS
-    SELECT DISTINCT ON (to_LocusID, to_allele_number_new)
+    SELECT DISTINCT (to_LocusID, to_allele_number_new)
         dbname,
         to_LocusID,
         to_allele_number_new,
@@ -255,17 +259,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False):
     """
     to_pull = con.execute(query).fetchall()
 
-    query = """
-    CREATE TABLE new_alleles (
-        LocusID UINTEGER,
-        allele_number USMALLINT,
-        allele_length USMALLINT,
-        sequence BLOB,
-    );
-    """
-    con.execute(query)
-
-    logging.info("Updating allele")
+    logging.info("Merging allele")
     for dbname, num_loci in to_pull:
         logging.debug("pulling %d from %s", num_loci, dbname)
         names = tdb.get_tdb_filenames(dbname)
@@ -380,7 +374,7 @@ def check_args(args):
     return check_fail
 
 
-def merge_batch_main(args):
+def bigmerge_main(args):
     """
     bigmerge main entrypoint
     """
