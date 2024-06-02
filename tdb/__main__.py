@@ -15,10 +15,11 @@ from tdb.debug_check import debug_check_main
 CMDS = {
     "create": create_main,
     "merge": merge_main,
-    "bigmerge": merge_batch_main
+    "bigmerge": merge_batch_main,
     "query": query_main,
     "deid": deid_main,
     "dump": dump_main,
+    "equal": debug_check_main,
 }
 
 
@@ -32,8 +33,6 @@ def main():
     """
     Main entrypoint for tdb
     """
-    # Hidden commands
-    CMDS['dbg_eq'] = debug_check_main
     parser = argparse.ArgumentParser(prog="tdb", description=USAGE,
                             formatter_class=argparse.RawDescriptionHelpFormatter)
 

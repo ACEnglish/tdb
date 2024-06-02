@@ -4,29 +4,31 @@ Merge multiple tdb files together.
 Faster than tdb when there's more than 10 files.
 """
 import os
-import tdb
-import duckdb
-import glob
+import sys
 import shutil
-import truvari
 import logging
+import argparse
 
-def consolidate_locus(con, db_paths, output_dir):
+import duckdb
+import truvari
+
+import tdb
+
+def consolidate_locus(con, db_paths, output_dir, compress=False):
     """
     con - duckdb connection
     base - the tdb we're merging to
     """
-    loging.info("Consolidating locus tables")
+    logging.info("Consolidating locus tables")
     base = tdb.get_tdb_filenames(db_paths[0])
 
-    #TODO: Back to worrying about types
     query = """
     CREATE TABLE loci_lookup (
         dbname TEXT,
         on_Lhash TEXT,
-        update_LocusID INTEGER,
-        to_LocusID INTEGER,
-        to_LocusID_new INTEGER,
+        update_LocusID UINTEGER,
+        to_LocusID UINTEGER,
+        to_LocusID_new UINTEGER,
     );
     """
     con.execute(query)
@@ -56,12 +58,12 @@ def consolidate_locus(con, db_paths, output_dir):
     """
     con.execute(query)
 
-    seen_loci, new_loci = con.execute(f"""
-        SELECT COALESCE(MAX(to_LocusID), -1) + 1, COUNT(*) FROM loci_lookup;
+    seen_loci = con.execute("""
+        SELECT COALESCE(MAX(to_LocusID), -1) + 1FROM loci_lookup;
     """).fetchone()[0]
-    
-    if new_loci == 0:
-        logging.info("no loci to consolidate")
+
+    # Should check how many new loci there are
+    # logging.info("no new loci to consolidate")
 
     # For Loci which aren't in the destination database, give them a to_LocusID_new
     query = f"""
@@ -86,7 +88,7 @@ def consolidate_locus(con, db_paths, output_dir):
     con.execute("UPDATE loci_lookup SET to_LocusID_new = COALESCE(to_LocusID, to_LocusID_new);")
 
     # Now I have my lookup, lets see which loci I need to pull
-    query = f"""
+    query = """
     CREATE TABLE loci_pull AS
     SELECT DISTINCT ON (on_Lhash)
         dbname,
@@ -101,10 +103,10 @@ def consolidate_locus(con, db_paths, output_dir):
     # Make a temporary file holding the new loci entries
     query = """
     CREATE TABLE new_loci (
-        LocusID INTEGER,
+        LocusID UINTEGER,
         chrom TEXT,
-        start INTEGER,
-        "end" INTEGER,
+        start UINTEGER,
+        "end" UINTEGER,
     );
     """
     con.execute(query)
@@ -123,30 +125,36 @@ def consolidate_locus(con, db_paths, output_dir):
             FROM
                 loci_pull
             JOIN
-                loci_lookup 
+                loci_lookup
                 ON loci_pull.dbname = loci_lookup.dbname AND loci_pull.on_Lhash = loci_lookup.on_Lhash
             JOIN
-                read_parquet('{m_locus}') AS original 
+                read_parquet('{m_locus}') AS original
                 ON loci_lookup.on_Lhash = md5(original.chrom || '-' || original.start || '-' || original."end")
             WHERE
                 loci_pull.dbname = '{dbname}';
         """
         con.execute(query)
 
-    # TODO: needs a do_order/compress
     olocus = os.path.join(output_dir, "locus.pq")
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = 'ORDER BY chrom, start, "end"'
+
     query = f"""
     COPY (
-        SELECT * 
+        SELECT *
         FROM read_parquet('{base["locus"]}')
         UNION ALL
         SELECT *
         FROM new_loci
-    ) TO '{olocus}' (FORMAT PARQUET)
+        {do_order}
+    ) TO '{olocus}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
 
-def consolidate_allele(con, db_paths, output_dir):
+def consolidate_allele(con, db_paths, output_dir, compress=False):
     """
     Consolidates alleles using db_paths[0] as the baseline
     """
@@ -155,15 +163,15 @@ def consolidate_allele(con, db_paths, output_dir):
     query = """
     CREATE TABLE allele_lookup (
         dbname TEXT,
-        update_LocusID INTEGER,
-        to_LocusID INTEGER,
-        update_allele_number INTEGER,
-        to_allele_number INTEGER,
-        to_allele_number_new INTEGER,
+        update_LocusID UINTEGER,
+        to_LocusID UINTEGER,
+        update_allele_number USMALLINT,
+        to_allele_number USMALLINT,
+        to_allele_number_new USMALLINT,
         on_Ahash TEXT,
     );
     """
-    con.execute(query);
+    con.execute(query)
 
     for dbname in db_paths:
         names = tdb.get_tdb_filenames(dbname)
@@ -194,7 +202,7 @@ def consolidate_allele(con, db_paths, output_dir):
         UPDATE allele_lookup
         SET to_allele_number = dest.allele_number
         FROM read_parquet('{ba}') AS dest
-        WHERE 
+        WHERE
             allele_lookup.to_LocusID = dest.LocusID
             AND allele_lookup.on_Ahash = md5(CAST(dest.sequence AS TEXT))
     """
@@ -217,7 +225,7 @@ def consolidate_allele(con, db_paths, output_dir):
     """)
 
     logging.debug("updating allele_number")
-    query = f"""
+    query = """
     UPDATE allele_lookup
     SET to_allele_number_new = COALESCE(allele_lookup.to_allele_number, temp_distinct_rows.to_allele_number_new)
     FROM temp_distinct_rows
@@ -229,7 +237,7 @@ def consolidate_allele(con, db_paths, output_dir):
 
     # Now I need to figure out which alleles are new
     logging.debug("figuring out alleles to pull")
-    query = f"""
+    query = """
     CREATE TABLE allele_pull AS
     SELECT DISTINCT ON (to_LocusID, to_allele_number_new)
         dbname,
@@ -240,35 +248,38 @@ def consolidate_allele(con, db_paths, output_dir):
     FROM allele_lookup
     WHERE to_allele_number IS NULL;
 
-    SELECT DISTINCT ON (dbname) dbname FROM allele_pull
+    SELECT dbname, COUNT(*) as occurrences
+    FROM allele_pull
+    GROUP BY dbname
+    ORDER BY occurrences DESC;
     """
     to_pull = con.execute(query).fetchall()
 
     # This might be helpful for MASSIVE merges. But probably not
     #con.execute("""
-    #CREATE INDEX 
-        #idx_allele_pull 
+    #CREATE INDEX
+        #idx_allele_pull
     #ON allele_pull(dbname, update_LocusID, update_allele_number);
     #
-    #CREATE INDEX 
-        #idx_allele_lookup 
+    #CREATE INDEX
+        #idx_allele_lookup
     #ON allele_lookup(dbname, update_LocusID, update_allele_number);
     #""")
 
     # Make a temporary file holding the new allele entries
     query = """
     CREATE TABLE new_alleles (
-        LocusID INTEGER,
-        allele_number INTEGER,
-        allele_length INTEGER,
+        LocusID UINTEGER,
+        allele_number USMALLINT,
+        allele_length USMALLINT,
         sequence BLOB,
     );
     """
     con.execute(query)
 
     logging.info("Updating allele")
-    for dbname, in to_pull:
-        logging.debug(dbname)
+    for dbname, num_loci in to_pull:
+        logging.debug("pulling %d from %s", num_loci, dbname)
         names = tdb.get_tdb_filenames(dbname)
         m_allele = names['allele']
         query = f"""
@@ -281,7 +292,7 @@ def consolidate_allele(con, db_paths, output_dir):
             FROM
                 allele_pull
             JOIN
-                read_parquet('{m_allele}') AS original 
+                read_parquet('{m_allele}') AS original
                 ON allele_pull.update_LocusID = original.LocusID
                 AND allele_pull.update_allele_number = original.allele_number
             WHERE
@@ -289,31 +300,46 @@ def consolidate_allele(con, db_paths, output_dir):
         """
         con.execute(query)
 
-    # TODO: needs a do_order/compress
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY LocusID, allele_number"
+
     alocus = os.path.join(output_dir, "allele.pq")
     query = f"""
     COPY (
-        SELECT * 
+        SELECT *
         FROM read_parquet('{base["allele"]}')
         UNION ALL
         SELECT *
         FROM new_alleles
-    ) TO '{alocus}' (FORMAT PARQUET)
+        {do_order}
+    ) TO '{alocus}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
 
-def consolidate_samples(con, db_names):
+def consolidate_sample(con, db_names, output_dir, compress=False):
+    """
+    Translate each sample table to the new database's keys
+    """
     logging.info("Updating samples")
     # would need to copy from the base
     base = tdb.get_tdb_filenames(db_names[0])
     for sample_pq in base['sample'].values():
         out_name = os.path.join(output_dir, os.path.basename(sample_pq))
         shutil.copy(sample_pq, out_name)
-        
+
     # And then update the rest
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY LocusID, allele_number"
+
     for dbname in db_names[1:]:
         files = tdb.get_tdb_filenames(dbname)
-        for sample, sample_pq in files['sample'].items():
+        for _, sample_pq in files['sample'].items():
             out_name = os.path.join(output_dir, os.path.basename(sample_pq))
             query = f"""
                 COPY (
@@ -330,11 +356,46 @@ def consolidate_samples(con, db_names):
                         allele_lookup.dbname == '{dbname}'
                         AND allele_lookup.update_LocusID == sample.LocusID
                         AND allele_lookup.update_allele_number == sample.allele_number
-                ) TO '{out_name}' (FORMAT PARQUET)
+                    {do_order}
+                ) TO '{out_name}' (FORMAT PARQUET{comp})
             """
             con.execute(query)
 
+
+def check_args(args):
+    """
+    Preflight checks on arguments. Returns True if there is a problem
+    """
+    check_fail = False
+
+    if os.path.exists(args.output):
+        logging.error(f"Output {args.output} already exists")
+        check_fail = True
+    if not args.output.endswith(".tdb"):
+        logging.error(f"Output {args.output} must end with `.tdb`")
+        check_fail = True
+    seen_samples = {}
+    for i in args.inputs:
+        if not os.path.exists(i):
+            logging.error(f"Input {i} does not exist")
+            check_fail = True
+        if not i.rstrip('/').endswith(".tdb"):
+            logging.error(f"Unrecognized file extension on {i} expected .tdb")
+            check_fail = True
+        else:  # can only check sample of valid file names
+            for s in tdb.get_tdb_samplenames(i):
+                if s in seen_samples:
+                    logging.error(
+                        f"Input {i} has redundant sample {s} with {seen_samples[s]}")
+                    check_fail = True
+                seen_samples[s] = i
+    return check_fail
+
+
 def merge_batch_main(args):
+    """
+    bigmerge main entrypoint
+    """
     parser = argparse.ArgumentParser(prog="tdb bigmerge", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output", metavar="OUT",
@@ -351,17 +412,23 @@ def merge_batch_main(args):
                         help="tdb files")
     args = parser.parse_args(args)
 
+    truvari.setup_logging(args.debug)
+
+    if check_args(args):
+        logging.error("Cannot merge database. Exiting")
+        sys.exit(1)
+
     os.mkdir(args.output)
 
     temp_db = truvari.make_temp_filename(suffix=".duckdb")
-
     con = duckdb.connect(temp_db)
-    
     con.execute("SET default_null_order ='NULLS LAST';")
-    con.execute("SET threads = 8;")
-    con.execute("SET memory_limit = '40GB';")
+    con.execute(f"SET threads = {args.threads};")
+    if args.mem:
+        con.execute(f"SET memory_limit = '{args.mem}GB';")
 
-    consolidate_locus(con, base, args.inputs, args.output)
-    consolidate_alleles(con, base, args.inputs, args.output)
-    consolidate_samples(con, base, args.inputs, args.output)
+    consolidate_locus(con, args.inputs, args.output, args.no_compress)
+    consolidate_allele(con, args.inputs, args.output, args.no_compress)
+    consolidate_sample(con, args.inputs, args.output, args.no_compress)
+
     con.close()

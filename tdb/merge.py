@@ -415,7 +415,7 @@ def merge_main(args):
     truvari.setup_logging(args.debug)
 
     if check_args(args):
-        logging.error("Cannot create database. Exiting")
+        logging.error("Cannot merge database. Exiting")
         sys.exit(1)
 
     GLOBAL_DUCK_SET.append(f"SET threads = {args.threads};")

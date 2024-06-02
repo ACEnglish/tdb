@@ -1,17 +1,15 @@
 """
 Development debugging utility to check if two tdbs are identical
 """
+import argparse
 import sys
 import pandas as pd
 import tdb
 
 def dataframes_equal(df1, df2, path):
     """Check if two DataFrames are equal."""
-    keys = ["LocusID"]
-    if path != 'locus':
-        keys.append("allele_number")
-    df1 = df1.sort_values(by=keys).set_index(keys)
-    df2 = df2.sort_values(by=keys).set_index(keys)
+    df1 = df1.sort_values(by=list(df1.columns)).reset_index(drop=True)
+    df2 = df2.sort_values(by=list(df2.columns)).reset_index(drop=True)
     if not df1.equals(df2):
         print(f"DataFrames differ at {path}", file=sys.stderr)
         return False
@@ -66,12 +64,52 @@ def check_dicts_equal(dict1, dict2):
 
     return True
 
+def join_cmp(db1, db2, strip):
+    """
+    Dump the databases and compare
+    """
+    dump1 = tdb.dump_tdb(db1)
+    dump2 = tdb.dump_tdb(db2)
+    if strip:
+        dump1.drop(columns=["LocusID", "allele_number"], inplace=True)
+        dump2.drop(columns=["LocusID", "allele_number"], inplace=True)
+
+    if not dump1.equals(dump2):
+        print("Dumps differ", file=sys.stderr)
+        return False
+    return True
+
 def debug_check_main(args):
     """
-    Tool for checking if tdbs are equal
+    Tool for checking if two tdbs are equal
     """
-    db1 = tdb.load_tdb(args[0])
-    db2 = tdb.load_tdb(args[1])
+    parser = argparse.ArgumentParser(prog="tdb equal", description=__doc__,
+                            formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("dbA", metavar="A",
+                        help="First tdb")
+    parser.add_argument("dbB", metavar="B",
+                        help="Second tdb")
+    parser.add_argument("--strip", action="store_true",
+                        help="Don't compare LocusID, allele_number keys")
+    parser.add_argument("--join", action="store_true",
+                        help="Do a full join comparison")
+    args = parser.parse_args(args)
+    db1 = tdb.load_tdb(args.dbA)
+    db2 = tdb.load_tdb(args.dbB)
+
+    if args.join:
+        join_cmp(db1, db1, args.strip)
+
+    if args.strip:
+        db1['locus'].drop(columns=['LocusID'], inplace=True)
+        db2['locus'].drop(columns=['LocusID'], inplace=True)
+        db1['allele'].drop(columns=['LocusID', "allele_number"], inplace=True)
+        db2['allele'].drop(columns=['LocusID', "allele_number"], inplace=True)
+        for sample in db1['sample']:
+            db1['sample'][sample].drop(columns=['LocusID', "allele_number"], inplace=True)
+        for sample in db2['sample']:
+            db2['sample'][sample].drop(columns=['LocusID', "allele_number"], inplace=True)
+
     if check_dicts_equal(db1, db2):
         sys.exit(0)
     else:

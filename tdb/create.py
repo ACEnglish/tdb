@@ -50,5 +50,5 @@ def create_main(args):
     logging.info("Loading %s", args.input)
     m_data = tdb.vcf_to_tdb(args.input)
     logging.info("Writing parquet files")
-    tdb.dump_tdb(m_data, args.output)
+    tdb.write_tdb(m_data, args.output)
     logging.info("Finished")

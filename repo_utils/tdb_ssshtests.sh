@@ -24,8 +24,12 @@ fn_md5() {
 
 tdb_check() {
     # check if parquet files are same
-    dir_name=$1
-    $tdb dbg_eq $INDIR/tdb/$dir_name $OD/$dir_name/
+    res_name=$1
+    ans_name=${2:-$1}
+    if [ "${STRIP,,}" == "true" ]; then
+        strip_option="--strip"
+    fi
+    $tdb equal $strip_option $INDIR/tdb/$ans_name $OD/$res_name/
     assert_equal $? 0
     assert_exit_code 0
 }
@@ -92,6 +96,17 @@ if [ $test_bad_merge ]; then
     assert_exit_code 1
 fi
 
+run test_bigmerge $tdb bigmerge -o $OD/merge2.tdb $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00741_chr14.tdb/ $INDIR/tdb/HG02630_chr14.tdb/
+if [ $test_bigmerge ]; then
+    STRIP=true tdb_check merge2.tdb merge1.tdb
+fi
+
+run test_bad_bigmerge $tdb bigmerge -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
+if [ $test_bad_bigmerge ]; then
+    assert_exit_code 1
+fi
+
+
 # ------------------------------------------------------------
 #                                 query
 # ------------------------------------------------------------
@@ -151,13 +166,13 @@ if [ $test_q_len_poly_score ]; then
 fi
 
 TDB_SEED=123 run test_q_saturation $tdb query saturation $INDIR/tdb/merge1.tdb -o $OD/saturation.tsv
-if [ $test_saturation ]; then
+if [ $test_q_saturation ]; then
     assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
     assert_exit_code 0
 fi
 
 run test_q_singletons $tdb query singletons $INDIR/tdb/merge1.tdb -o $OD/singletons.tsv
-if [ $test_singletons ]; then
+if [ $test_q_singletons ]; then
     assert_equal $(fn_md5 $INDIR/queries/singletons.tsv) $(fn_md5 $OD/singletons.tsv)
     assert_exit_code 0
 fi
@@ -167,12 +182,12 @@ fi
 # ------------------------------------------------------------
 
 run test_deid $tdb deid -o $OD/deid.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
-if [ $test_append ]; then
+if [ $test_deid ]; then
     tdb_check deid.tdb
 fi
 
 run test_deid_seq $tdb deid -s -o $OD/deid_seq.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
-if [ $test_append ]; then
+if [ $test_deid_seq ]; then
     tdb_check deid_seq.tdb
 fi
 
@@ -194,6 +209,25 @@ if [ $test_dump ]; then
     assert_equal $(fn_md5 $INDIR/queries/HG00438.dump.txt) $(fn_md5 $OD/HG00438.dump.txt)
     assert_exit_code 0
 fi
+
+# ------------------------------------------------------------
+#                                 equal
+# ------------------------------------------------------------
+run test_equal1 $tdb equal $INDIR/tdb/HG00438_chr14.tdb $INDIR/tdb/HG00438_chr14.tdb
+if [ $test_equal1 ]; then
+    assert_exit_code 0
+fi
+
+run test_equal2 $tdb equal $INDIR/tdb/HG00438_chr14.tdb $INDIR/tdb/merge1.tdb
+if [ $test_equal2 ]; then
+    assert_exit_code 1
+fi
+
+run test_equal3 $tdb equal --strip --join $INDIR/tdb/merge1.tdb $INDIR/tdb/merge1.tdb
+if [ $test_equal3 ]; then
+    assert_exit_code 0
+fi
+
 
 # ------------------------------------------------------------
 #                                 doctests

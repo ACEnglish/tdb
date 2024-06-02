@@ -153,7 +153,7 @@ def write_samples(samples, output):
         writer.close()
 
 
-def dump_tdb(data, output):
+def write_tdb(data, output):
     """
     Write tdb data to output folder
 

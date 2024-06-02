@@ -3,7 +3,7 @@ Tandem repeat database and analysis queries
 """
 
 from tdb.dbutils import (
-    dump_tdb,
+    write_tdb,
     get_tdb_filenames,
     get_tdb_samplenames,
     load_tdb,
@@ -25,4 +25,8 @@ from tdb.query import (
 from tdb.jaccard import (
     jaccard_compare_seqs,
     alleles_jaccard_dist
+)
+
+from tdb.dump import (
+    dump_tdb
 )
