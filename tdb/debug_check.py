@@ -111,6 +111,7 @@ def debug_check_main(args):
             db2['sample'][sample].drop(columns=['LocusID', "allele_number"], inplace=True)
 
     if check_dicts_equal(db1, db2):
+        print("Databases equal", file=sys.stderr)
         sys.exit(0)
     else:
         sys.exit(1)
