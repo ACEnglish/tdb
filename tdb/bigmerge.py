@@ -153,7 +153,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
 
 
 def allele_puller(con, dbname, num_loci):
-    logging.debug("pulling %d from %s", num_loci, dbname)
+    logging.debug("pulling %d alleles from %s", num_loci, dbname)
     local_con = con.cursor()
     names = tdb.get_tdb_filenames(dbname)
     m_allele = names['allele']
@@ -174,6 +174,7 @@ def allele_puller(con, dbname, num_loci):
             allele_pull.dbname = '{dbname}';
     """
     local_con.execute(query).fetchall()
+    logging.debug("pulled alleles from %s", dbname)
 
 
 def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
@@ -286,7 +287,6 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     to_pull = con.execute(query).fetchall()
 
     logging.info("Merging allele")
-    con.execute("SET threads = 1;")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         futures = [executor.submit(allele_puller, con, dbname, num_loci) for dbname, num_loci in to_pull]
         for future in concurrent.futures.as_completed(futures):
@@ -294,7 +294,6 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
                 future.result()  # This will raise an exception if the task failed
             except Exception as e:
                 logging.error(f"An error occurred: {e}")
-    con.execute(f"SET threads = {threads};")
 
     comp = ""
     do_order = ""
@@ -319,7 +318,7 @@ def sample_puller(con, dbname, output_dir, compress):
     """
     Translates samples to new ids and moves
     """
-    local_con = con.cursor()
+    logging.debug("pulling samples from %s", dbname)
     comp = ""
     do_order = ""
     if compress:
@@ -347,7 +346,8 @@ def sample_puller(con, dbname, output_dir, compress):
                 {do_order}
             ) TO '{out_name}' (FORMAT PARQUET{comp})
         """
-        con.execute(query).fetchall()
+        con.execute(query)
+    logging.debug("pulled %d samples from %s", len(files['sample']), dbname)
 
 
 def consolidate_sample(con, db_names, output_dir, compress=False, threads=1):
@@ -362,7 +362,6 @@ def consolidate_sample(con, db_names, output_dir, compress=False, threads=1):
         shutil.copy(sample_pq, out_name)
 
     # And then update the rest
-    con.execute("SET threads = 1;")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         futures = [executor.submit(sample_puller, con, dbname, output_dir, compress) for dbname in db_names[1:]]
         for future in concurrent.futures.as_completed(futures):
@@ -370,7 +369,6 @@ def consolidate_sample(con, db_names, output_dir, compress=False, threads=1):
                 future.result()  # This will raise an exception if the task failed
             except Exception as e:
                 logging.error(f"An error occurred: {e}")
-    con.execute(f"SET threads = {threads};")
 
 
 def check_args(args):
