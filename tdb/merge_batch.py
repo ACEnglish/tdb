@@ -1,3 +1,8 @@
+"""
+Merge multiple tdb files together.
+
+Faster than tdb when there's more than 10 files.
+"""
 import os
 import tdb
 import duckdb
@@ -6,12 +11,13 @@ import shutil
 import truvari
 import logging
 
-def consolidate_locus(con, base, all_dbs, new_database_dir):
+def consolidate_locus(con, db_paths, output_dir):
     """
     con - duckdb connection
     base - the tdb we're merging to
     """
     loging.info("Consolidating locus tables")
+    base = tdb.get_tdb_filenames(db_paths[0])
 
     #TODO: Back to worrying about types
     query = """
@@ -25,7 +31,7 @@ def consolidate_locus(con, base, all_dbs, new_database_dir):
     """
     con.execute(query)
 
-    for dbname in all_dbs:
+    for dbname in db_paths:
         names = tdb.get_tdb_filenames(dbname)
         locus_pq = names['locus']
         query = f"""
@@ -128,7 +134,7 @@ def consolidate_locus(con, base, all_dbs, new_database_dir):
         con.execute(query)
 
     # TODO: needs a do_order/compress
-    olocus = os.path.join(new_database_dir, "locus.pq")
+    olocus = os.path.join(output_dir, "locus.pq")
     query = f"""
     COPY (
         SELECT * 
@@ -140,9 +146,12 @@ def consolidate_locus(con, base, all_dbs, new_database_dir):
     """
     con.execute(query)
 
-def consolidate_allele(con, base, all_dbs, new_database_dir):
+def consolidate_allele(con, db_paths, output_dir):
+    """
+    Consolidates alleles using db_paths[0] as the baseline
+    """
     logging.info("Consolidating allele")
-
+    base = tdb.get_tdb_filenames(db_paths[0])
     query = """
     CREATE TABLE allele_lookup (
         dbname TEXT,
@@ -156,7 +165,7 @@ def consolidate_allele(con, base, all_dbs, new_database_dir):
     """
     con.execute(query);
 
-    for dbname in all_dbs:
+    for dbname in db_paths:
         names = tdb.get_tdb_filenames(dbname)
         allele_pq = names['allele']
         query = f"""
@@ -236,7 +245,6 @@ def consolidate_allele(con, base, all_dbs, new_database_dir):
     to_pull = con.execute(query).fetchall()
 
     # This might be helpful for MASSIVE merges. But probably not
-    #print("indexing")
     #con.execute("""
     #CREATE INDEX 
         #idx_allele_pull 
@@ -282,7 +290,7 @@ def consolidate_allele(con, base, all_dbs, new_database_dir):
         con.execute(query)
 
     # TODO: needs a do_order/compress
-    alocus = os.path.join(new_database_dir, "allele.pq")
+    alocus = os.path.join(output_dir, "allele.pq")
     query = f"""
     COPY (
         SELECT * 
@@ -294,18 +302,19 @@ def consolidate_allele(con, base, all_dbs, new_database_dir):
     """
     con.execute(query)
 
-def consolidate_samples(con, base, all_dbs):
+def consolidate_samples(con, db_names):
     logging.info("Updating samples")
     # would need to copy from the base
+    base = tdb.get_tdb_filenames(db_names[0])
     for sample_pq in base['sample'].values():
-        out_name = os.path.join(new_database_dir, os.path.basename(sample_pq))
+        out_name = os.path.join(output_dir, os.path.basename(sample_pq))
         shutil.copy(sample_pq, out_name)
         
     # And then update the rest
-    for dbname in all_dbs[1:]:
+    for dbname in db_names[1:]:
         files = tdb.get_tdb_filenames(dbname)
         for sample, sample_pq in files['sample'].items():
-            out_name = os.path.join(new_database_dir, os.path.basename(sample_pq))
+            out_name = os.path.join(output_dir, os.path.basename(sample_pq))
             query = f"""
                 COPY (
                     SELECT
@@ -326,20 +335,33 @@ def consolidate_samples(con, base, all_dbs):
             con.execute(query)
 
 def merge_batch_main(args):
-    all_dbs = list(glob.glob("repo_utils/test_files/tdb/H*.tdb"))
-    base = tdb.get_tdb_filenames(all_dbs[0])
+    parser = argparse.ArgumentParser(prog="tdb bigmerge", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-o", "--output", metavar="OUT",
+                        help="Output tdb directory")
+    parser.add_argument("--mem", default=None,
+                        help="Maximum memory in GB (off)")
+    parser.add_argument("--threads", default=1, type=int,
+                        help="Number of threads (%(default)s)")
+    parser.add_argument("--no-compress", action="store_false",
+                        help="Don't sort/compress output (faster merge, bigger output)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Verbose logging")
+    parser.add_argument("inputs", metavar="IN", nargs="+",
+                        help="tdb files")
+    args = parser.parse_args(args)
 
-    new_database_dir = "newdb.tdb"
+    os.mkdir(args.output)
 
     temp_db = truvari.make_temp_filename(suffix=".duckdb")
-    os.mkdir(new_database_dir)
-    con = duckdb.connect(temp_db)
 
+    con = duckdb.connect(temp_db)
+    
     con.execute("SET default_null_order ='NULLS LAST';")
     con.execute("SET threads = 8;")
     con.execute("SET memory_limit = '40GB';")
 
-    consolidate_locus(con, base, all_dbs, new_database_dir)
-    consolidate_alleles(con, base, all_dbs, new_database_dir)
-    consolidate_samples(con, base, all_dbs, new_database_dir)
+    consolidate_locus(con, base, args.inputs, args.output)
+    consolidate_alleles(con, base, args.inputs, args.output)
+    consolidate_samples(con, base, args.inputs, args.output)
     con.close()
