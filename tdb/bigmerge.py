@@ -26,7 +26,9 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     query = """
     CREATE TABLE loci_lookup (
         dbname TEXT,
-        on_Lhash UBIGINT,
+        chrom TEXT,
+        start UINTEGER,
+        "end" UINTEGER,
         update_LocusID UINTEGER,
         to_LocusID UINTEGER,
         to_LocusID_new UINTEGER,
@@ -45,10 +47,12 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
         names = tdb.get_tdb_filenames(dbname)
         locus_pq = names['locus']
         query = f"""
-            INSERT INTO loci_lookup (dbname, on_Lhash, update_LocusID, to_LocusID)
+            INSERT INTO loci_lookup (dbname, chrom, start, "end", update_LocusID, to_LocusID)
             SELECT
                 '{dbname}' AS dbname,
-                hash(locus.chrom || '-' || locus.start || '-' || locus.end) AS on_Lhash,
+                locus.chrom as chrom,
+                locus.start as start,
+                locus."end" as "end",
                 locus.LocusID AS update_LocusID,
                 NULL AS to_LocusID,
             FROM
@@ -62,7 +66,10 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
         UPDATE loci_lookup
         SET to_LocusID = dest.LocusID
         FROM read_parquet('{bl}') AS dest
-        WHERE loci_lookup.on_Lhash = hash(dest.chrom || '-' || dest.start || '-' || dest.end)
+        WHERE 
+            loci_lookup.chrom = dest.chrom
+            AND loci_lookup.start = dest.start
+            AND loci_lookup."end" = dest."end"
     """
     con.execute(query)
 
@@ -76,25 +83,49 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     # For Loci which aren't in the destination database, give them a to_LocusID_new
     query = f"""
         WITH unique_hashes AS (
-            SELECT DISTINCT on_Lhash
+            SELECT DISTINCT chrom, start, "end"
             FROM loci_lookup
             WHERE to_LocusID IS NULL
         ),
         distinct_rows AS (
             SELECT
-                on_Lhash,
-                ROW_NUMBER() OVER (ORDER BY on_Lhash) + {seen_loci} AS to_LocusID_new
+                chrom, start, "end",
+                ROW_NUMBER() OVER (ORDER BY chrom, start, "end") + {seen_loci} AS to_LocusID_new
             FROM unique_hashes
         )
         UPDATE loci_lookup
         SET to_LocusID_new = distinct_rows.to_LocusID_new
         FROM distinct_rows
-        WHERE loci_lookup.on_Lhash = distinct_rows.on_Lhash;
+        WHERE 
+            loci_lookup.chrom = distinct_rows.chrom
+            AND loci_lookup.start = distinct_rows.start
+            AND loci_lookup."end" = distinct_rows."end";
     """
     con.execute(query)
 
     con.execute("UPDATE loci_lookup SET to_LocusID_new = COALESCE(to_LocusID, to_LocusID_new);")
 
+    olocus = os.path.join(output_dir, "locus.pq")
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = 'ORDER BY chrom, start, "end"'
+
+    query = f"""
+    COPY (
+        SELECT DISTINCT ON (to_LocusID_new)
+            to_LocusID_new as LocusID,
+            chrom,
+            start,
+            "end"
+        FROM loci_lookup
+    ) TO '{olocus}' (FORMAT PARQUET{comp})
+    """
+    con.execute(query)
+    return
+
+    # I think I could stop here
     # Now I have my lookup, lets see which loci I need to pull
     query = """
     CREATE TABLE loci_pull AS
