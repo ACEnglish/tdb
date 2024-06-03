@@ -181,20 +181,17 @@ def write_tables(cur_tables, tables):
     ldf = pd.DataFrame(cur_tables["locus"], columns=L_COLUMNS, copy=False)
     locus = pa.Table.from_pandas(ldf, schema=schema, preserve_index=False)
     tables['locus'].write(locus)
-    tables['locus'].flush()
 
     schema = pa.schema({key: DTYPES[key][0] for key in A_COLUMNS})
     adf = pd.DataFrame(cur_tables["allele"], columns=A_COLUMNS, copy=False)
     allele = pa.Table.from_pandas(adf, schema=schema, preserve_index=False)
     tables['allele'].write(allele)
-    tables['allele'].flush()
 
     schema = pa.schema({key: DTYPES[key][0] for key in S_COLUMNS})
     for name, out_samp in tables["sample"].items():
         sdf = pd.DataFrame(cur_tables["sample"][name], columns=S_COLUMNS, copy=False)
         sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
         out_samp.write(sample)
-        out_samp.flush()
     # Reset memory
     USEDMEM = 1e6
 
