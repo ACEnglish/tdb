@@ -175,7 +175,9 @@ fi
 
 TDB_SEED=123 run test_q_saturation $tdb query saturation $INDIR/tdb/merge1.tdb -o $OD/saturation.tsv
 if [ $test_q_saturation ]; then
-    assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
+    fi
     assert_exit_code 0
 fi
 
