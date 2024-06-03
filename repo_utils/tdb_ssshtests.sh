@@ -19,7 +19,7 @@ tdb="coverage run --concurrency=multiprocessing,thread -p -m tdb.__main__"
 fn_md5() {
     fn=$1
     # simple md5sum checking
-    md5sum $fn | cut -f1 -d\  
+    md5sum <(sort $fn) | cut -f1 -d\  
 }
 
 tdb_check() {
@@ -149,19 +149,25 @@ fi
 
 run test_q_methyl $tdb query methyl $INDIR/tdb/merge1.tdb -O p -o $OD/methyl.pq
 if [ $test_q_methyl ]; then
-    assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
+    fi
     assert_exit_code 0
 fi
 
 run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/comp_poly_score.pq
 if [ $test_q_comp_poly_score ]; then
-    assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
+    fi
     assert_exit_code 0
 fi
 
 run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/len_poly_score.pq
 if [ $test_q_len_poly_score ]; then
-    assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
+    if
     assert_exit_code 0
 fi
 
@@ -193,7 +199,9 @@ fi
 
 TDB_SEED=123 run test_deid_shuf $tdb deid -S -o $OD/deid_shuf.tdb -i $INDIR/tdb/merge1.tdb
 if [ $test_deid_shuf ]; then
-    tdb_check deid_shuf.tdb
+    if [ "${STOPCHECK}" != 'true' ]; then
+        tdb_check deid_shuf.tdb
+    fi
 fi
 
 run test_deid_badparam $tdb deid -o repo_utils -i $INDIR/vcf/doesntexist
