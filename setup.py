@@ -8,7 +8,7 @@ def read(rel_path):
     with codecs.open(os.path.join(here, rel_path), 'r') as fp:
         return fp.read()
 
-VERSION = "1.0.0"
+VERSION = "0.2.0"
 
 setup(
     name="tdb",

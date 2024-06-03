@@ -27,10 +27,10 @@ tdb_check() {
     assert_exit_code 0
     res_name=$1
     ans_name=${2:-$1}
-    if [ "${STRIP,,}" == "true" ]; then
-        strip_option="--strip"
+    if [ "${STRIP}" == "true" ]; then
+        strip_opt="--strip"
     fi
-    $tdb equal $strip_option $INDIR/tdb/$ans_name $OD/$res_name/
+    $tdb equal $strip_opt --join $INDIR/tdb/$ans_name $OD/$res_name/
     assert_equal $? 0
 }
 
@@ -82,13 +82,13 @@ fi
 
 run test_merge $tdb merge -o $OD/merge1.tdb $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00741_chr14.tdb/ $INDIR/tdb/HG02630_chr14.tdb/
 if [ $test_merge ]; then
-    tdb_check merge1.tdb
+    STRIP=true tdb_check merge1.tdb
 fi
 
 run test_merge_into $tdb create -o $OD/merge_into.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
 run test_merge_into $tdb merge --no-compress --mem 1 --into $OD/merge_into.tdb $INDIR/tdb/HG02630_chr14.tdb $INDIR/tdb/HG00438_chr14.tdb
 if [ $test_merge_into ]; then
-    tdb_check merge_into.tdb
+    STRIP=true tdb_check merge_into.tdb
 fi
 
 run test_bad_merge $tdb merge --into $OD/mergex -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
