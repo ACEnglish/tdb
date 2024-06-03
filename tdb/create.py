@@ -11,11 +11,12 @@ import logging
 import argparse
 
 import pysam
-import truvari
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+import tdb
 
 #pylint: disable=global-statement
 
@@ -35,8 +36,9 @@ L_COLUMNS = ["LocusID", "chrom", "start", "end"]
 A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
 S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
              "length_range_upper", "average_methylation"]
-# Assume 100MB is always used
-USEDMEM = 1e6
+
+# Give 100MB of overhead since our memory tracking probably underestimates
+USEDMEM = 1e8
 AVAILMEM = sys.maxsize
 
 def check_args(args):
@@ -193,7 +195,7 @@ def write_tables(cur_tables, tables):
         sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
         out_samp.write(sample)
     # Reset memory
-    USEDMEM = 1e6
+    USEDMEM = 1e8
 
 def create_main(args):
     """
@@ -214,13 +216,13 @@ def create_main(args):
                         help="VCF file")
     args = parser.parse_args(args)
 
-    truvari.setup_logging(args.debug)
+    tdb.setup_logging(args.debug)
 
     if check_args(args):
         logging.error("Cannot create database. Exiting")
         sys.exit(1)
 
-    truvari.setup_logging()
+    tdb.setup_logging()
     if args.mem is not None:
         AVAILMEM = args.mem * 1e9
 

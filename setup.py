@@ -28,9 +28,10 @@ setup(
       ]
     },
     install_requires=[
-        "truvari>=4.0",
-        "pysam>=0.22",
-        "pyarrow>=14.0",
-        "duckdb",
+        "duckdb>=0.6.1",
+        "numpy>=1.26.4",
+        "pandas>=2.2.2",
+        "pysam>=0.22.1",
+        "pyarrow>=16.1",
     ],
 )

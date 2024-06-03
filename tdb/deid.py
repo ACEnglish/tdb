@@ -6,7 +6,6 @@ import sys
 import shutil
 import logging
 import argparse
-import truvari
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -48,7 +47,7 @@ def deid_main(args): # pylint: disable=too-many-locals
     parser.add_argument("-S", "--shuffle-samples", action="store_true",
                         help="Shuffle sample tables together and split (experimental)")
     args = parser.parse_args(args)
-    truvari.setup_logging()
+    tdb.setup_logging()
 
     if check_args(args):
         logging.error("argument error. exiting")

@@ -7,7 +7,6 @@ import shutil
 import logging
 import argparse
 import duckdb
-import truvari
 import numpy as np
 import pandas as pd
 
@@ -74,8 +73,8 @@ def join_loci_tables(original_loci, second_loci, compress):
     con = duckdb.connect()
     setup_duck(con)
 
-    loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
-    up_locus = truvari.make_temp_filename(suffix=".pq")
+    loci_lookup_parquet_path = tdb.make_temp_filename(suffix=".pq")
+    up_locus = tdb.make_temp_filename(suffix=".pq")
 
     comp = ""
     do_order = ""
@@ -137,7 +136,7 @@ def update_allele_locusid(second_allele, loci_lookup):
     con = duckdb.connect()
     setup_duck(con)
 
-    second_updated_locusid = truvari.make_temp_filename(suffix=".pq")
+    second_updated_locusid = tdb.make_temp_filename(suffix=".pq")
 
     create_updated_allele = f"""
     COPY (
@@ -172,8 +171,8 @@ def create_allele_lookup(original_allele, second_allele):
     con = duckdb.connect()
     setup_duck(con)
 
-    new_alleles_path = truvari.make_temp_filename(suffix=".pq")
-    allele_lookup_path = truvari.make_temp_filename(suffix=".pq")
+    new_alleles_path = tdb.make_temp_filename(suffix=".pq")
+    allele_lookup_path = tdb.make_temp_filename(suffix=".pq")
 
     query = f"""
     CREATE TABLE lookup AS SELECT
@@ -237,11 +236,11 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
 
     Returns a path to a new allele table which should be moved when ready
     """
-    spillover = truvari.make_temp_filename(suffix=".db")
+    spillover = tdb.make_temp_filename(suffix=".db")
     con = duckdb.connect(spillover)
     setup_duck(con)
 
-    up_allele = truvari.make_temp_filename(suffix=".pq")
+    up_allele = tdb.make_temp_filename(suffix=".pq")
 
     comp = ""
     do_order = ""
@@ -290,7 +289,7 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     con = duckdb.connect()
     setup_duck(con)
 
-    sample_lookup = truvari.make_temp_filename(suffix=".pq")
+    sample_lookup = tdb.make_temp_filename(suffix=".pq")
 
     query = f"""
     COPY (
@@ -318,7 +317,7 @@ def update_sample_table(second_sample, sample_lookup, compress):
     con = duckdb.connect()
     setup_duck(con)
 
-    output_path = truvari.make_temp_filename(suffix=".pq")
+    output_path = tdb.make_temp_filename(suffix=".pq")
     comp = ", COMPRESSION GZIP" if compress else ""
     do_order = "ORDER BY LocusID, allele_number" if compress else ""
 
@@ -412,7 +411,7 @@ def merge_main(args):
                         help="tdb files")
     args = parser.parse_args(args)
 
-    truvari.setup_logging(args.debug)
+    tdb.setup_logging(args.debug)
 
     if check_args(args):
         logging.error("Cannot merge database. Exiting")

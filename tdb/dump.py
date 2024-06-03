@@ -3,7 +3,6 @@ Join all tables in a tdb and dump to a flat tsv file
 """
 import logging
 import argparse
-import truvari
 import pandas as pd
 
 import tdb
@@ -42,7 +41,7 @@ def dump_main(args):
                         help="Input tdb")
     args = parser.parse_args(args)
 
-    truvari.setup_logging()
+    tdb.setup_logging()
 
     data = tdb.load_tdb(args.input)
     dump_tdb(data, args.output)

@@ -11,7 +11,6 @@ import argparse
 import concurrent.futures
 
 import duckdb
-import truvari
 
 import tdb
 
@@ -446,7 +445,7 @@ def bigmerge_main(args):
                         help="tdb files")
     args = parser.parse_args(args)
 
-    truvari.setup_logging(args.debug)
+    tdb.setup_logging(args.debug)
 
     if check_args(args):
         logging.error("Cannot merge database. Exiting")
@@ -454,7 +453,7 @@ def bigmerge_main(args):
 
     os.mkdir(args.output)
 
-    temp_db = truvari.make_temp_filename(suffix=".duckdb")
+    temp_db = tdb.make_temp_filename(suffix=".duckdb")
     con = duckdb.connect(temp_db)
     con.execute("SET default_null_order ='NULLS LAST';")
     con.execute(f"SET threads = {args.threads};")

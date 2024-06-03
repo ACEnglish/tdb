@@ -3,12 +3,12 @@ Tandem repeat database and analysis queries
 """
 
 from tdb.dbutils import (
-    write_tdb,
     get_tdb_filenames,
     get_tdb_samplenames,
     load_tdb,
-    vcf_to_tdb,
-    write_samples,
+    make_temp_filename,
+    setup_logging,
+    write_tdb,
 )
 
 from tdb.query import (
