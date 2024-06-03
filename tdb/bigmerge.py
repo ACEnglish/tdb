@@ -15,7 +15,26 @@ import truvari
 
 import tdb
 
-def consolidate_locus(con, db_paths, output_dir, compress=False):
+def locus_puller(con, dbname):
+    """
+    Read input tdb loci for consolidation
+    """
+    local_con = con.cursor()
+    names = tdb.get_tdb_filenames(dbname)
+    locus_pq = names['locus']
+    query = f"""
+    INSERT INTO loci_lookup (dbname, on_Lhash, update_LocusID, to_LocusID)
+    SELECT
+        '{dbname}' AS dbname,
+        hash(locus.chrom || '-' || locus.start || '-' || locus.end) AS on_Lhash,
+        locus.LocusID AS update_LocusID,
+        NULL AS to_LocusID,
+    FROM
+        read_parquet('{locus_pq}') AS locus;
+    """
+    local_con.execute(query)
+
+def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     """
     con - duckdb connection
     base - the tdb we're merging to
@@ -41,20 +60,14 @@ def consolidate_locus(con, db_paths, output_dir, compress=False):
     """
     con.execute(query)
 
-    for dbname in db_paths:
-        names = tdb.get_tdb_filenames(dbname)
-        locus_pq = names['locus']
-        query = f"""
-            INSERT INTO loci_lookup (dbname, on_Lhash, update_LocusID, to_LocusID)
-            SELECT
-                '{dbname}' AS dbname,
-                hash(locus.chrom || '-' || locus.start || '-' || locus.end) AS on_Lhash,
-                locus.LocusID AS update_LocusID,
-                NULL AS to_LocusID,
-            FROM
-                read_parquet('{locus_pq}') AS locus;
-        """
-        con.execute(query)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+        futures = [executor.submit(locus_puller, con, dbname) for dbname in db_paths]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception as e: #pylint: disable=broad-exception-caught
+                logging.error(f"An error occurred: {e}")
+                sys.exit(1)
 
     # Set what the LocusIDs should be set to_ by looking at the destination database
     bl = base['locus']
@@ -451,7 +464,7 @@ def bigmerge_main(args):
     if args.mem:
         con.execute(f"SET memory_limit = '{args.mem}GB';")
 
-    consolidate_locus(con, args.inputs, args.output, args.no_compress)
+    consolidate_locus(con, args.inputs, args.output, args.no_compress, args.threads)
     consolidate_allele(con, args.inputs, args.output, args.no_compress, args.threads)
     consolidate_sample(con, args.inputs, args.output, args.no_compress, args.threads)
 
