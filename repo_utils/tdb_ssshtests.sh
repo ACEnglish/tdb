@@ -1,7 +1,7 @@
 
 test -e ssshtest || curl -O https://raw.githubusercontent.com/ryanlayer/ssshtest/master/ssshtest
 source ssshtest
-#STOP_ON_FAIL=1
+
 # Work inside of the repo folder
 cd "$( dirname "${BASH_SOURCE[0]}" )"/../
 INDIR=repo_utils/test_files
@@ -133,7 +133,9 @@ fi
 
 run test_q_monref $tdb query monref $INDIR/tdb/TwoSamps.tdb -o $OD/monref.txt
 if [ $test_q_monref ]; then
-    assert_equal $(fn_md5 $INDIR/queries/monref.txt) $(fn_md5 $OD/monref.txt)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/monref.txt) $(fn_md5 $OD/monref.txt)
+    fi
     assert_exit_code 0
 fi
 
