@@ -29,6 +29,11 @@ Merge more samples into a tdb with:
 tdb merge --into merged.tdb output3.tdb output4.tdb ...
 ```
 
+For merging ≥10 tdbs, use:
+```
+tdb bigmerge -o merged.tdb results/samples*.tdb
+```
+
 ## Tutorials
 
 See the [wiki](https://github.com/acenglish/tdb/wiki) for details on what tdb is or jump straight into
