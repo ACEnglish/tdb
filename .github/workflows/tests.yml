@@ -32,18 +32,3 @@ jobs:
       - name: Running pylint
         run: |
           python repo_utils/pylint_maker.py
-      - name: Uploading badges
-        uses: actions/upload-artifact@v3
-        with:
-          name: htmlcov
-          path: test_results/htmlcov
-      - name: Commit README
-        run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git commit -m "Update coverage score" -a || echo "No changes to commit"
-      - name: Push README
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
