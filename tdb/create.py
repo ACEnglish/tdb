@@ -37,8 +37,8 @@ A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
 S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
              "length_range_upper", "average_methylation"]
 
-# Give 100MB of overhead since our memory tracking probably underestimates
-USEDMEM = 1e8
+# Give overhead since our memory tracking probably underestimates
+USEDMEM = 2e8
 AVAILMEM = sys.maxsize
 
 def check_args(args):
@@ -195,7 +195,7 @@ def write_tables(cur_tables, tables):
         sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
         out_samp.write(sample)
     # Reset memory
-    USEDMEM = 1e8
+    USEDMEM = 2e8
 
 def create_main(args):
     """
@@ -238,7 +238,7 @@ def create_main(args):
         cur_tables, cvt_any = convert_buffer(vcf, samples, stats)
         if not cvt_any:
             break
-        logging.debug("writing. totals %s", stats)
+        logging.info("Writing batch. Row totals %s", stats)
         write_tables(cur_tables, tables)
         del cur_tables
         gc.collect()
@@ -248,5 +248,4 @@ def create_main(args):
     for st in tables['sample'].values():
         st.close()
 
-    logging.info("Rows written: %s", stats)
     logging.info("Finished")
