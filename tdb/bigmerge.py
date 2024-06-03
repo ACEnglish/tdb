@@ -37,7 +37,8 @@ def locus_puller(con, dbname):
 def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     """
     con - duckdb connection
-    base - the tdb we're merging to
+    db_pahts - input databases
+    output_dir - output database
     """
     logging.info("Consolidating locus tables")
     base = tdb.get_tdb_filenames(db_paths[0])
@@ -69,7 +70,8 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
                 logging.error(f"An error occurred: {e}")
                 sys.exit(1)
 
-    # Set what the LocusIDs should be set to_ by looking at the destination database
+    # Set what the LocusIDs should be set to_ by looking at the destination database first
+    logging.info("Updating LocusID")
     bl = base['locus']
     query = f"""
         UPDATE loci_lookup
@@ -82,9 +84,6 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     seen_loci = con.execute("""
         SELECT COALESCE(MAX(to_LocusID), -1) + 1FROM loci_lookup;
     """).fetchone()[0]
-
-    # Should check how many new loci there are
-    # logging.info("no new loci to consolidate")
 
     # For Loci which aren't in the destination database, give them a to_LocusID_new
     query = f"""
@@ -108,7 +107,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
 
     con.execute("UPDATE loci_lookup SET to_LocusID_new = COALESCE(to_LocusID, to_LocusID_new);")
 
-    # Now I have my lookup, lets see which loci I need to pull
+    # Now I have my lookup, lets see which need to be merged
     query = """
     CREATE TABLE loci_pull AS
     SELECT DISTINCT ON (on_Lhash)
@@ -119,10 +118,10 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
 
     SELECT DISTINCT ON (dbname) dbname FROM loci_pull
     """
-    to_pull = con.execute(query).fetchall()
+    to_merge = con.execute(query).fetchall()
 
     logging.info("Merging locus")
-    for dbname, in to_pull:
+    for dbname, in to_merge:
         names = tdb.get_tdb_filenames(dbname)
         m_locus = names['locus']
         query = f"""
@@ -165,7 +164,7 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     con.execute(query)
 
 
-def allele_pusher(con, dbname):
+def allele_puller(con, dbname):
     """
     Read input tdb alleles for consolidation
     """
@@ -193,9 +192,9 @@ def allele_pusher(con, dbname):
     """
     local_con.execute(query)
 
-def allele_puller(con, dbname, num_loci):
+def allele_merger(con, dbname, num_loci):
     """
-    Pull alleles into the database
+    Put new alleles into the database
     """
     logging.debug("pulling %d alleles from %s", num_loci, dbname)
     local_con = con.cursor()
@@ -248,14 +247,14 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     con.execute(query)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(allele_pusher, con, dbname) for dbname in db_paths]
+        futures = [executor.submit(allele_puller, con, dbname) for dbname in db_paths]
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
             except Exception as e: #pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
-    # Set what the allele_number should be set to_ by looking at the destination database
+    logging.info("Updating allele_number")
     ba = base['allele']
     query = f"""
     UPDATE allele_lookup
@@ -283,7 +282,6 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     FROM unique_hashes;
     """)
 
-    logging.debug("updating allele_number")
     query = """
     UPDATE allele_lookup
     SET to_allele_number_new = COALESCE(allele_lookup.to_allele_number, temp_distinct_rows.to_allele_number_new)
@@ -295,7 +293,6 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     con.execute(query)
 
     # Now I need to figure out which alleles are new
-    logging.debug("figuring out alleles to pull")
     query = """
     CREATE TABLE allele_pull AS
     SELECT DISTINCT ON (to_LocusID, to_allele_number_new)
@@ -312,11 +309,11 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     GROUP BY dbname
     ORDER BY occurrences DESC;
     """
-    to_pull = con.execute(query).fetchall()
+    to_merge = con.execute(query).fetchall()
 
     logging.info("Merging allele")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(allele_puller, con, dbname, num_loci) for dbname, num_loci in to_pull]
+        futures = [executor.submit(allele_merger, con, dbname, num_loci) for dbname, num_loci in to_merge]
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
