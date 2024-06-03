@@ -37,9 +37,9 @@ A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
 S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
              "length_range_upper", "average_methylation"]
 
-# Give overhead since our memory tracking probably underestimates
-USEDMEM = 2e8
 AVAILMEM = sys.maxsize
+# Give 25% overhead since our memory tracking probably underestimates
+USEDMEM = int(AVAILMEM * 0.75)
 
 def check_args(args):
     """
@@ -195,7 +195,7 @@ def write_tables(cur_tables, tables):
         sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
         out_samp.write(sample)
     # Reset memory
-    USEDMEM = 2e8
+    USEDMEM = int(AVAILMEM * 0.75)
 
 def create_main(args):
     """

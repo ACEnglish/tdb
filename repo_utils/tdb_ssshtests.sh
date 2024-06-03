@@ -129,37 +129,37 @@ if [ $test_q_allele_seqs ]; then
     assert_exit_code 0
 fi
 
-run test_q_monref $tdb query monref $INDIR/tdb/TwoSamps.tdb -o $OD/monref.txt
+run test_q_monref $tdb query monref $INDIR/tdb/merge1.tdb -o $OD/monref.txt
 if [ $test_q_monref ]; then
     assert_equal $(fn_md5 $INDIR/queries/monref.txt) $(fn_md5 $OD/monref.txt)
     assert_exit_code 0
 fi
 
-run test_q_gtmerge $tdb query gtmerge $INDIR/tdb/TwoWithTDB.tdb -o $OD/gtmerge.txt
+run test_q_gtmerge $tdb query gtmerge $INDIR/tdb/merge1.tdb -o $OD/gtmerge.txt
 if [ $test_q_gtmerge ]; then
     assert_equal $(fn_md5 $INDIR/queries/gtmerge.txt) $(fn_md5 $OD/gtmerge.txt)
     assert_exit_code 0
 fi
 
-run test_q_metadata $tdb query metadata $INDIR/tdb/TwoWithTDB.tdb -o $OD/metadata.txt
+run test_q_metadata $tdb query metadata $INDIR/tdb/merge1.tdb -o $OD/metadata.txt
 if [ $test_q_metadata ]; then
     assert_equal $(fn_md5 $INDIR/queries/metadata.txt) $(fn_md5 $OD/metadata.txt)
     assert_exit_code 0
 fi
 
-run test_q_methyl $tdb query methyl $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/methyl.pq
+run test_q_methyl $tdb query methyl $INDIR/tdb/merge1.tdb -O p -o $OD/methyl.pq
 if [ $test_q_methyl ]; then
     assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
     assert_exit_code 0
 fi
 
-run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/comp_poly_score.pq
+run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/comp_poly_score.pq
 if [ $test_q_comp_poly_score ]; then
     assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
     assert_exit_code 0
 fi
 
-run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/len_poly_score.pq
+run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/len_poly_score.pq
 if [ $test_q_len_poly_score ]; then
     assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
     assert_exit_code 0
@@ -181,17 +181,17 @@ fi
 #                                 deid
 # ------------------------------------------------------------
 
-run test_deid $tdb deid -o $OD/deid.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
+run test_deid $tdb deid -o $OD/deid.tdb -i $INDIR/tdb/merge1.tdb
 if [ $test_deid ]; then
     tdb_check deid.tdb
 fi
 
-run test_deid_seq $tdb deid -s -o $OD/deid_seq.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
+run test_deid_seq $tdb deid -s -o $OD/deid_seq.tdb -i $INDIR/tdb/merge1.tdb
 if [ $test_deid_seq ]; then
     tdb_check deid_seq.tdb
 fi
 
-TDB_SEED=123 run test_deid_shuf $tdb deid -S -o $OD/deid_shuf.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
+TDB_SEED=123 run test_deid_shuf $tdb deid -S -o $OD/deid_shuf.tdb -i $INDIR/tdb/merge1.tdb
 if [ $test_deid_shuf ]; then
     tdb_check deid_shuf.tdb
 fi
