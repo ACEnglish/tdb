@@ -13,21 +13,26 @@ def dump_tdb(data, file=None):
     is iteratively written to. If a file isn't provided,
     the DataFrame is returned, otherwise an empty dataframe
     """
+    data['allele']['sequence'] = data['allele']['sequence'].str.decode('utf8')
     view = pd.merge(data['locus'], data['allele'], how='right', on="LocusID")
+    if len(data['sample']) == 0:
+        if file:
+            view.to_csv(file, mode='w', sep='\t', index=False)
+        return view
+
     use_header = file is not None
     parts = []
     for sample, table in data['sample'].items():
         view2 = pd.merge(view, table, on=['LocusID', 'allele_number'])
         view2['sample'] = sample
-        if file is not None:
+        if file:
             view2.to_csv(file, mode='w' if use_header else 'a', sep='\t', index=False, header=use_header)
-        else:
-            parts.append(view2)
+        parts.append(view2)
         use_header=False
 
-    if file is None:
+    if parts:
         return pd.concat(parts)
-    return pd.DataFrame()
+    return view
 
 def dump_main(args):
     """

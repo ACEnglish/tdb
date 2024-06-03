@@ -8,7 +8,6 @@ from tdb.dbutils import (
     load_tdb,
     make_temp_filename,
     setup_logging,
-    write_tdb,
 )
 
 from tdb.query import (

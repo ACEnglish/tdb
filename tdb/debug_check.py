@@ -74,6 +74,11 @@ def join_cmp(db1, db2, strip):
         dump1.drop(columns=["LocusID", "allele_number"], inplace=True)
         dump2.drop(columns=["LocusID", "allele_number"], inplace=True)
 
+    dump1.sort_values(by=list(dump1.columns), inplace=True)
+    dump1.reset_index(drop=True, inplace=True)
+    dump2.sort_values(by=list(dump2.columns), inplace=True)
+    dump2.reset_index(drop=True, inplace=True)
+
     if not dump1.equals(dump2):
         print("Dumps differ", file=sys.stderr)
         return False
@@ -98,7 +103,7 @@ def debug_check_main(args):
     db2 = tdb.load_tdb(args.dbB)
 
     if args.join:
-        join_cmp(db1, db1, args.strip)
+        join_cmp(db1, db2, args.strip)
 
     if args.strip:
         db1['locus'].drop(columns=['LocusID'], inplace=True)

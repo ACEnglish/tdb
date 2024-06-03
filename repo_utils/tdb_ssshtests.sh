@@ -29,8 +29,10 @@ tdb_check() {
     ans_name=${2:-$1}
     if [ "${STRIP}" == "true" ]; then
         strip_opt="--strip"
+    else
+        strip_opt=""
     fi
-    $tdb equal $strip_opt --join $INDIR/tdb/$ans_name $OD/$res_name/
+    $tdb equal $strip_opt $INDIR/tdb/$ans_name $OD/$res_name/
     assert_equal $? 0
 }
 

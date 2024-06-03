@@ -8,7 +8,6 @@ import logging
 import tempfile
 import warnings
 
-import pyarrow as pa
 import pyarrow.parquet as pq
 
 def setup_logging(debug=False, stream=sys.stderr,
@@ -139,37 +138,3 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
         ret['sample'][samp] = pq.read_table(
             names['sample'][samp], filters=sfilters).to_pandas()
     return ret
-
-
-def write_tdb(data, output):
-    """
-    Write tdb data to output folder
-
-    WARNING: will overwrite existing data
-    """
-    if not os.path.exists(output):
-        os.mkdir(output)
-    pq_fns = get_tdb_filenames(output)
-    data['locus'].to_parquet(pq_fns['locus'], index=False, compression='gzip')
-    data['allele'].to_parquet(
-        pq_fns['allele'], index=False, compression='gzip')
-
-    s_schema = pa.schema([('LocusID', pa.uint32()),
-                          ('allele_number', pa.uint16()),
-                          ('spanning_reads', pa.uint16()),
-                          ('length_range_lower', pa.uint16()),
-                          ('length_range_upper', pa.uint16()),
-                          ('average_methylation', pa.float32())
-                          ])
-    for sample, value in data['sample'].items():
-        o_fn = os.path.join(output, f"sample.{sample}.pq")
-        m_table = pa.Table.from_pandas(value)
-        n_table = []
-        n_names = []
-        for col, dtype in zip(s_schema.names, s_schema.types):
-            n_table.append(pa.compute.cast(m_table[col], dtype))
-            n_names.append(col)
-        n_table = pa.Table.from_arrays(n_table, names=n_names)
-        writer = pq.ParquetWriter(o_fn, s_schema, compression='gzip')
-        writer.write_table(n_table)
-        writer.close()
