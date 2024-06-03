@@ -37,9 +37,9 @@ A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
 S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
              "length_range_upper", "average_methylation"]
 
-AVAILMEM = sys.maxsize
-# Give 25% overhead since our memory tracking probably underestimates
-USEDMEM = int(AVAILMEM * 0.75)
+AVAILMEM = 1e11 # 100GB default
+# Give 20% overhead since our memory tracking probably underestimates
+USEDMEM = int(AVAILMEM * 0.20)
 
 def check_args(args):
     """
@@ -195,13 +195,14 @@ def write_tables(cur_tables, tables):
         sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
         out_samp.write(sample)
     # Reset memory
-    USEDMEM = int(AVAILMEM * 0.75)
+    USEDMEM = int(AVAILMEM * 0.20)
 
 def create_main(args):
     """
     Create a new tdb from multiple input calls
     """
     global AVAILMEM
+    global USEDMEM
     parser = argparse.ArgumentParser(prog="tdb create", description=__doc__,
                             formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
@@ -225,6 +226,7 @@ def create_main(args):
     tdb.setup_logging()
     if args.mem is not None:
         AVAILMEM = args.mem * 1e9
+        USEDMEM = int(AVAILMEM * 0.20)
 
     os.mkdir(args.output)
 
