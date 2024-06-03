@@ -169,7 +169,7 @@ run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/merge1.tdb -O p -
 if [ $test_q_len_poly_score ]; then
     if [ "${STOPCHECK}" != 'true' ]; then
         assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
-    if
+    fi
     assert_exit_code 0
 fi
 
