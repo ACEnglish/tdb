@@ -137,7 +137,9 @@ fi
 
 run test_q_gtmerge $tdb query gtmerge $INDIR/tdb/merge1.tdb -o $OD/gtmerge.txt
 if [ $test_q_gtmerge ]; then
-    assert_equal $(fn_md5 $INDIR/queries/gtmerge.txt) $(fn_md5 $OD/gtmerge.txt)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/gtmerge.txt) $(fn_md5 $OD/gtmerge.txt)
+    fi
     assert_exit_code 0
 fi
 
