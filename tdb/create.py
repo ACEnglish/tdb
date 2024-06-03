@@ -207,8 +207,8 @@ def create_main(args):
                             formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
                         help="Output tdb directory")
-    parser.add_argument("--mem", metavar="MEM", type=int,
-                        help="Memory in GB available to buffer reading (unlimited)")
+    parser.add_argument("--mem", metavar="MEM", type=int, default=100,
+                        help="Memory in GB available to buffer reading (%(default)s)")
     parser.add_argument("--no-compress", action="store_false",
                         help="Don't compress the database")
     parser.add_argument("--debug", action="store_true",
@@ -224,9 +224,8 @@ def create_main(args):
         sys.exit(1)
 
     tdb.setup_logging()
-    if args.mem is not None:
-        AVAILMEM = args.mem * 1e9
-        USEDMEM = int(AVAILMEM * 0.20)
+    AVAILMEM = args.mem * 1e9
+    USEDMEM = int(AVAILMEM * 0.20)
 
     os.mkdir(args.output)
 
