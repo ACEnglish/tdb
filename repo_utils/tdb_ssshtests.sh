@@ -24,14 +24,16 @@ fn_md5() {
 
 tdb_check() {
     # check if parquet files are same
-    res_name=$1
-    ans_name=${2:-$1}
-    if [ "${STRIP,,}" == "true" ]; then
-        strip_option="--strip"
-    fi
-    $tdb equal $strip_option $INDIR/tdb/$ans_name $OD/$res_name/
-    assert_equal $? 0
     assert_exit_code 0
+    if [ "${STOPCHECK}" != 'true' ]; then
+        res_name=$1
+        ans_name=${2:-$1}
+        if [ "${STRIP,,}" == "true" ]; then
+            strip_option="--strip"
+        fi
+        $tdb equal $strip_option $INDIR/tdb/$ans_name $OD/$res_name/
+        assert_equal $? 0
+    fi
 }
 
 # ------------------------------------------------------------
@@ -149,31 +151,41 @@ fi
 
 run test_q_methyl $tdb query methyl $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/methyl.pq
 if [ $test_q_methyl ]; then
-    assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
+    fi
     assert_exit_code 0
 fi
 
 run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/comp_poly_score.pq
 if [ $test_q_comp_poly_score ]; then
-    assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
+    fi
     assert_exit_code 0
 fi
 
 run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/len_poly_score.pq
 if [ $test_q_len_poly_score ]; then
-    assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
+    fi
     assert_exit_code 0
 fi
 
 TDB_SEED=123 run test_q_saturation $tdb query saturation $INDIR/tdb/merge1.tdb -o $OD/saturation.tsv
 if [ $test_q_saturation ]; then
-    assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
+    fi
     assert_exit_code 0
 fi
 
 run test_q_singletons $tdb query singletons $INDIR/tdb/merge1.tdb -o $OD/singletons.tsv
 if [ $test_q_singletons ]; then
-    assert_equal $(fn_md5 $INDIR/queries/singletons.tsv) $(fn_md5 $OD/singletons.tsv)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/singletons.tsv) $(fn_md5 $OD/singletons.tsv)
+    fi
     assert_exit_code 0
 fi
 
