@@ -181,6 +181,9 @@ def allele_pusher(con, dbname):
     local_con.execute(query)
 
 def allele_puller(con, dbname, num_loci):
+    """
+    Pull alleles into the database
+    """
     logging.debug("pulling %d alleles from %s", num_loci, dbname)
     local_con = con.cursor()
     names = tdb.get_tdb_filenames(dbname)
@@ -235,8 +238,8 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
         futures = [executor.submit(allele_pusher, con, dbname) for dbname in db_paths]
         for future in concurrent.futures.as_completed(futures):
             try:
-                future.result()  # This will raise an exception if the task failed
-            except Exception as e:
+                future.result()
+            except Exception as e: #pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
     # Set what the allele_number should be set to_ by looking at the destination database
@@ -303,8 +306,8 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
         futures = [executor.submit(allele_puller, con, dbname, num_loci) for dbname, num_loci in to_pull]
         for future in concurrent.futures.as_completed(futures):
             try:
-                future.result()  # This will raise an exception if the task failed
-            except Exception as e:
+                future.result()
+            except Exception as e: #pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
     comp = ""
@@ -378,8 +381,8 @@ def consolidate_sample(con, db_names, output_dir, compress=False, threads=1):
         futures = [executor.submit(sample_puller, con, dbname, output_dir, compress) for dbname in db_names[1:]]
         for future in concurrent.futures.as_completed(futures):
             try:
-                future.result()  # This will raise an exception if the task failed
-            except Exception as e:
+                future.result()
+            except Exception as e: #pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
 
