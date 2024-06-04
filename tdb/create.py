@@ -15,8 +15,6 @@ import pyarrow.parquet as pq
 
 import tdb
 
-# pylint: disable=global-statement
-
 DTYPES = {"LocusID": (pa.uint32(), np.uint32),
           "chrom": (pa.string(), str),
           "start": (pa.uint32(), np.uint32),
@@ -33,10 +31,6 @@ L_COLUMNS = ["LocusID", "chrom", "start", "end"]
 A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
 S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
              "length_range_upper", "average_methylation"]
-
-AVAILMEM = 1e11  # 100GB default
-# Give 20% overhead since our memory tracking probably underestimates
-USEDMEM = int(AVAILMEM * 0.20)
 
 
 def check_args(args):
@@ -112,25 +106,21 @@ def translate_entry(entry, locus_id):
     a list of allele rows
     a dictionary of sample: list of sample rows
     """
-    global USEDMEM
     locus = [locus_id, entry.chrom, entry.start, entry.stop]
-    USEDMEM += sys.getsizeof(locus)
 
     alleles = [(locus_id, allele_number, len(sequence),
                 b'' if sequence is None else sequence.encode("utf8"))
                for allele_number, sequence in enumerate(entry.alleles)]
-    USEDMEM += sys.getsizeof(alleles)
 
     samples = {}
     for sample, m_d in entry.samples.items():
         samples[sample] = sample_extract(locus_id, m_d)
     # Approximate usage of each row of a sample table
-    USEDMEM += 400 * len(samples)
 
     return locus, alleles, samples
 
 
-def convert_buffer(vcf, samples, stats):
+def convert_buffer(vcf, samples, stats, avail_mem):
     """
     Converts a number of vcf entries.
     Tries to monitor memory to not buffer too many
@@ -141,7 +131,8 @@ def convert_buffer(vcf, samples, stats):
                 }
     # Flag for telling main loop when we're finished
     cvt_any = False
-    while AVAILMEM > USEDMEM:
+    used_mem = int(avail_mem * 0.20)
+    while avail_mem > used_mem:
         try:
             entry = next(vcf)
         except StopIteration:
@@ -158,6 +149,10 @@ def convert_buffer(vcf, samples, stats):
             num_samples += len(rows)
             m_buffer['sample'][name].extend(rows)
 
+        used_mem += sys.getsizeof(cur_locus)
+        used_mem += sys.getsizeof(cur_allele)
+        used_mem += 400 * num_samples
+
         stats['locus'] += 1
         stats['allele'] += len(cur_allele)
         stats['sample'] += num_samples
@@ -169,7 +164,6 @@ def write_tables(cur_tables, tables):
     """
     Write the cur_tables entries to the output tables
     """
-    global USEDMEM
     schema = pa.schema({key: DTYPES[key][0] for key in L_COLUMNS})
     ldf = pd.DataFrame(cur_tables["locus"], columns=L_COLUMNS, copy=False)
     locus = pa.Table.from_pandas(ldf, schema=schema, preserve_index=False)
@@ -187,15 +181,12 @@ def write_tables(cur_tables, tables):
         sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
         out_samp.write(sample)
     # Reset memory
-    USEDMEM = int(AVAILMEM * 0.20)
 
 
 def create_main(args):
     """
     Create a new tdb from multiple input calls
     """
-    global AVAILMEM
-    global USEDMEM
     parser = argparse.ArgumentParser(prog="tdb create", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
@@ -217,8 +208,7 @@ def create_main(args):
         sys.exit(1)
 
     tdb.setup_logging()
-    AVAILMEM = args.mem * 1e9
-    USEDMEM = int(AVAILMEM * 0.20)
+    avail_mem = args.mem * 1e9
 
     os.mkdir(args.output)
 
@@ -229,7 +219,7 @@ def create_main(args):
     tables = make_parquets(samples, args.output, args.no_compress)
     logging.info("Converting VCF with %d samples", len(samples))
     while True:
-        cur_tables, cvt_any = convert_buffer(vcf, samples, stats)
+        cur_tables, cvt_any = convert_buffer(vcf, samples, stats, avail_mem)
         if not cvt_any:
             break
         logging.info("Writing batch. Row totals %s", stats)
