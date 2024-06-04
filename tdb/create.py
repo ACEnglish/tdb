@@ -63,20 +63,17 @@ def make_parquets(samples, out_dir, compression):
     Parquet writer for the tables
     """
     ret = {}
-
     comp = "GZIP" if compression else None
+    ret['locus'] = pq.ParquetWriter(os.path.join(out_dir, 'locus.pq'),
+                                    L_SCHEMA, compression=comp)
 
-    fn = os.path.join(out_dir, 'locus.pq')
-    ret['locus'] = pq.ParquetWriter(fn, L_SCHEMA, compression=comp)
-
-    fn = os.path.join(out_dir, 'allele.pq')
-    ret['allele'] = pq.ParquetWriter(fn, A_SCHEMA, compression=comp)
-
+    ret['allele'] = pq.ParquetWriter(os.path.join(out_dir, 'allele.pq'),
+                                     A_SCHEMA, compression=comp)
     ret['sample'] = {}
     for name in samples:
-        fn = os.path.join(out_dir, f"sample.{name}.pq")
-        ret['sample'][name] = pq.ParquetWriter(fn, S_SCHEMA, compression=comp)
-
+        ret['sample'][name] = pq.ParquetWriter(os.path.join(out_dir,
+                                                            f"sample.{name}.pq"),
+                                               S_SCHEMA, compression=comp)
     return ret
 
 
@@ -85,10 +82,7 @@ def sample_extract(locus_id, fmt_fields):
     Given a dict from a vcf record sample, turn them into sample rows
     """
     ret = []
-    view = zip(fmt_fields['GT'],
-               fmt_fields['SD'],
-               fmt_fields['ALLR'],
-               fmt_fields['AM'])
+    view = zip(fmt['GT'], fmt['SD'], fmt['ALLR'], fmt['AM'])
     for an, sd, allr, am in view:
         if an is None:
             continue
@@ -107,15 +101,12 @@ def translate_entry(entry, locus_id):
     a dictionary of sample: list of sample rows
     """
     locus = [locus_id, entry.chrom, entry.start, entry.stop]
-
     alleles = [(locus_id, allele_number, len(sequence),
                 b'' if sequence is None else sequence.encode("utf8"))
                for allele_number, sequence in enumerate(entry.alleles)]
-
     samples = {}
     for sample, m_d in entry.samples.items():
         samples[sample] = sample_extract(locus_id, m_d)
-    # Approximate usage of each row of a sample table
 
     return locus, alleles, samples
 
@@ -139,9 +130,8 @@ def convert_buffer(vcf, samples, stats, avail_mem):
             break
 
         cvt_any = True
-        cur_locus, cur_allele, cur_sample = translate_entry(
-            entry, stats['locus'])
-
+        cur_locus, cur_allele, cur_sample = translate_entry(entry,
+                                                            stats['locus'])
         m_buffer['locus'].append(cur_locus)
         m_buffer['allele'].extend(cur_allele)
         num_samples = 0
