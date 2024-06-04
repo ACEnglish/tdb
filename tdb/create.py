@@ -8,29 +8,32 @@ import logging
 import argparse
 
 import pysam
-import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 import tdb
 
-DTYPES = {"LocusID": (pa.uint32(), np.uint32),
-          "chrom": (pa.string(), str),
-          "start": (pa.uint32(), np.uint32),
-          "end": (pa.uint32(), np.uint32),
-          "allele_number": (pa.uint16(), np.uint16),
-          "allele_length": (pa.uint16(), np.uint16),
-          "sequence": (pa.binary(), bytes),
-          "spanning_reads": (pa.uint16(), np.uint16),
-          "length_range_lower": (pa.uint16(), np.uint16),
-          "length_range_upper": (pa.uint16(), np.uint16),
-          "average_methylation": (pa.float32(), np.float32)}
+DTYPES = {"LocusID": pa.uint32(),
+          "chrom": pa.string(),
+          "start": pa.uint32(),
+          "end": pa.uint32(),
+          "allele_number": pa.uint16(),
+          "allele_length": pa.uint16(),
+          "sequence": pa.binary(),
+          "spanning_reads": pa.uint16(),
+          "length_range_lower": pa.uint16(),
+          "length_range_upper": pa.uint16(),
+          "average_methylation": pa.float32()}
 
 L_COLUMNS = ["LocusID", "chrom", "start", "end"]
 A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
 S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
              "length_range_upper", "average_methylation"]
+
+L_SCHEMA = pa.schema({key: DTYPES[key] for key in L_COLUMNS})
+A_SCHEMA = pa.schema({key: DTYPES[key] for key in A_COLUMNS})
+S_SCHEMA = pa.schema({key: DTYPES[key] for key in S_COLUMNS})
 
 
 def check_args(args):
@@ -64,18 +67,15 @@ def make_parquets(samples, out_dir, compression):
     comp = "GZIP" if compression else None
 
     fn = os.path.join(out_dir, 'locus.pq')
-    schema = pa.schema([pa.field(key, DTYPES[key][0]) for key in L_COLUMNS])
-    ret['locus'] = pq.ParquetWriter(fn, schema, compression=comp)
+    ret['locus'] = pq.ParquetWriter(fn, L_SCHEMA, compression=comp)
 
     fn = os.path.join(out_dir, 'allele.pq')
-    schema = pa.schema([pa.field(key, DTYPES[key][0]) for key in A_COLUMNS])
-    ret['allele'] = pq.ParquetWriter(fn, schema, compression=comp)
+    ret['allele'] = pq.ParquetWriter(fn, A_SCHEMA, compression=comp)
 
     ret['sample'] = {}
-    schema = pa.schema([pa.field(key, DTYPES[key][0]) for key in S_COLUMNS])
     for name in samples:
         fn = os.path.join(out_dir, f"sample.{name}.pq")
-        ret['sample'][name] = pq.ParquetWriter(fn, schema, compression=comp)
+        ret['sample'][name] = pq.ParquetWriter(fn, S_SCHEMA, compression=comp)
 
     return ret
 
@@ -164,23 +164,20 @@ def write_tables(cur_tables, tables):
     """
     Write the cur_tables entries to the output tables
     """
-    schema = pa.schema({key: DTYPES[key][0] for key in L_COLUMNS})
     ldf = pd.DataFrame(cur_tables["locus"], columns=L_COLUMNS, copy=False)
-    locus = pa.Table.from_pandas(ldf, schema=schema, preserve_index=False)
+    locus = pa.Table.from_pandas(ldf, schema=L_SCHEMA, preserve_index=False)
     tables['locus'].write(locus)
 
-    schema = pa.schema({key: DTYPES[key][0] for key in A_COLUMNS})
     adf = pd.DataFrame(cur_tables["allele"], columns=A_COLUMNS, copy=False)
-    allele = pa.Table.from_pandas(adf, schema=schema, preserve_index=False)
+    allele = pa.Table.from_pandas(adf, schema=A_SCHEMA, preserve_index=False)
     tables['allele'].write(allele)
 
-    schema = pa.schema({key: DTYPES[key][0] for key in S_COLUMNS})
     for name, out_samp in tables["sample"].items():
         sdf = pd.DataFrame(cur_tables["sample"][name],
                            columns=S_COLUMNS, copy=False)
-        sample = pa.Table.from_pandas(sdf, schema=schema, preserve_index=False)
+        sample = pa.Table.from_pandas(sdf, schema=S_SCHEMA,
+                                      preserve_index=False)
         out_samp.write(sample)
-    # Reset memory
 
 
 def create_main(args):

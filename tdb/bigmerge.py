@@ -14,6 +14,7 @@ import duckdb
 
 import tdb
 
+
 def locus_puller(con, dbname):
     """
     Read input tdb loci for consolidation
@@ -32,6 +33,7 @@ def locus_puller(con, dbname):
         read_parquet('{locus_pq}') AS locus;
     """
     local_con.execute(query)
+
 
 def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     """
@@ -61,11 +63,12 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     con.execute(query)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(locus_puller, con, dbname) for dbname in db_paths]
+        futures = [executor.submit(locus_puller, con, dbname)
+                   for dbname in db_paths]
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
-            except Exception as e: #pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
                 sys.exit(1)
 
@@ -104,7 +107,8 @@ def consolidate_locus(con, db_paths, output_dir, compress=False, threads=1):
     """
     con.execute(query)
 
-    con.execute("UPDATE loci_lookup SET to_LocusID_new = COALESCE(to_LocusID, to_LocusID_new);")
+    con.execute(
+        "UPDATE loci_lookup SET to_LocusID_new = COALESCE(to_LocusID, to_LocusID_new);")
 
     # Now I have my lookup, lets see which need to be merged
     query = """
@@ -191,6 +195,7 @@ def allele_puller(con, dbname):
     """
     local_con.execute(query)
 
+
 def allele_merger(con, dbname, num_loci):
     """
     Put new alleles into the database
@@ -246,11 +251,12 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     con.execute(query)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(allele_puller, con, dbname) for dbname in db_paths]
+        futures = [executor.submit(allele_puller, con, dbname)
+                   for dbname in db_paths]
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
-            except Exception as e: #pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
     logging.info("Updating allele_number")
@@ -312,11 +318,12 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
 
     logging.info("Merging allele")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(allele_merger, con, dbname, num_loci) for dbname, num_loci in to_merge]
+        futures = [executor.submit(allele_merger, con, dbname, num_loci)
+                   for dbname, num_loci in to_merge]
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
-            except Exception as e: #pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
     comp = ""
@@ -337,6 +344,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     ) TO '{alocus}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
+
 
 def sample_puller(con, dbname, output_dir, compress):
     """
@@ -387,11 +395,12 @@ def consolidate_sample(con, db_names, output_dir, compress=False, threads=1):
 
     # And then update the rest
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(sample_puller, con, dbname, output_dir, compress) for dbname in db_names[1:]]
+        futures = [executor.submit(
+            sample_puller, con, dbname, output_dir, compress) for dbname in db_names[1:]]
         for future in concurrent.futures.as_completed(futures):
             try:
                 future.result()
-            except Exception as e: #pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error(f"An error occurred: {e}")
 
 
@@ -460,9 +469,12 @@ def bigmerge_main(args):
     if args.mem:
         con.execute(f"SET memory_limit = '{args.mem}GB';")
 
-    consolidate_locus(con, args.inputs, args.output, args.no_compress, args.threads)
-    consolidate_allele(con, args.inputs, args.output, args.no_compress, args.threads)
-    consolidate_sample(con, args.inputs, args.output, args.no_compress, args.threads)
+    consolidate_locus(con, args.inputs, args.output,
+                      args.no_compress, args.threads)
+    consolidate_allele(con, args.inputs, args.output,
+                       args.no_compress, args.threads)
+    consolidate_sample(con, args.inputs, args.output,
+                       args.no_compress, args.threads)
 
     con.close()
     logging.info("Finished")

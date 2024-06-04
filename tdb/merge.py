@@ -354,14 +354,16 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     Automatically removes the temporary flies it creates
     The tdbs should be get_tdb_filenames or whatever it's called
     """
-    loci_lookup, up_locus = join_loci_tables(tdb_1['locus'], tdb_2['locus'], allele_gz)
+    loci_lookup, up_locus = join_loci_tables(tdb_1['locus'],
+                                             tdb_2['locus'],
+                                             allele_gz)
     second_allele_locus_updated = update_allele_locusid(tdb_2['allele'],
                                                         loci_lookup)
     new_alleles, allele_lookup = create_allele_lookup(tdb_1['allele'],
                                                       second_allele_locus_updated)
     logging.debug("Consolidating alleles")
     up_allele = consolidate_alleles(tdb_1['allele'], second_allele_locus_updated,
-                        new_alleles, allele_gz)
+                                    new_alleles, allele_gz)
     logging.debug("Creating sample lookup")
     sample_lookup = create_sample_lookup(loci_lookup, allele_lookup)
 
@@ -369,7 +371,8 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     logging.debug("Updating samples")
     up_samples = {}
     for name, second_sample in tdb_2['sample'].items():
-        up_samples[name] = update_sample_table(second_sample, sample_lookup, samp_gz)
+        up_samples[name] = update_sample_table(second_sample,
+                                               sample_lookup, samp_gz)
 
     logging.debug("putting into output")
     shutil.move(up_locus, tdb_1['locus'])
@@ -422,7 +425,8 @@ def merge_main(args):
         GLOBAL_DUCK_SET.append(f"SET memory_limit = '{args.mem}GB';")
 
     if args.output is not None:
-        logging.info("Consolidating %s (1/%d)", args.inputs[0], len(args.inputs))
+        logging.info("Consolidating %s (1/%d)",
+                     args.inputs[0], len(args.inputs))
         shutil.copytree(args.inputs[0], args.output)
         args.inputs.pop(0)
         dest_tdb = tdb.get_tdb_filenames(args.output)

@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import tdb
 
+
 def check_args(args):
     """
     Preflight checks on arguments. Returns True if there is a problem
@@ -30,12 +31,13 @@ def check_args(args):
         check_fail = True
     return check_fail
 
-def deid_main(args): # pylint: disable=too-many-locals
+
+def deid_main(args):  # pylint: disable=too-many-locals
     """
     Remove genotypes from a tdb
     """
     parser = argparse.ArgumentParser(prog="tdb append", description=__doc__,
-                            formatter_class=argparse.RawDescriptionHelpFormatter)
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     # these could be positional arguments, but a little bit of user friction
     # will help prevent unintentional overwriting
     parser.add_argument("-i", "--input", metavar="IN", type=str,
@@ -64,7 +66,8 @@ def deid_main(args): # pylint: disable=too-many-locals
         alleles["sequence"] = ""
     logging.info("Changing allele_numbers")
     ref = alleles[alleles["allele_number"] == 0].copy()
-    alt = alleles[alleles["allele_number"] != 0].copy().sort_values(["LocusID", "allele_length"])
+    alt = alleles[alleles["allele_number"] != 0].copy(
+    ).sort_values(["LocusID", "allele_length"])
     alt["allele_number"] = alt.groupby(["LocusID"]).cumcount() + 1
     out = pd.concat([ref, alt]).sort_values(["LocusID", "allele_number"])
     out.to_parquet(out_file_names['allele'], index=False, compression='gzip')
@@ -75,7 +78,7 @@ def deid_main(args): # pylint: disable=too-many-locals
                           ('length_range_lower', pa.uint16()),
                           ('length_range_upper', pa.uint16()),
                           ('average_methylation', pa.float32())
-                        ])
+                          ])
 
     if args.shuffle_samples:
         # For testing, we want deterministic shuffling
@@ -90,7 +93,8 @@ def deid_main(args): # pylint: disable=too-many-locals
         for i in in_file_names['sample'].values():
             parts.append(pd.read_parquet(i))
             n_samps += 1
-        samps = pd.concat(parts).sample(frac=1, random_state=seed).sort_values(["LocusID"])
+        samps = pd.concat(parts).sample(
+            frac=1, random_state=seed).sort_values(["LocusID"])
         for idx in range(n_samps):
             o_fn = os.path.join(args.output, f"sample.{idx}.pq")
             value = samps.iloc[idx:len(samps):n_samps]

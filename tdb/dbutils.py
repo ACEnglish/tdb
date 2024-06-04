@@ -10,6 +10,7 @@ import warnings
 
 import pyarrow.parquet as pq
 
+
 def setup_logging(debug=False, stream=sys.stderr,
                   log_format="%(asctime)s [%(levelname)s] %(message)s"):
     """
@@ -34,6 +35,7 @@ def setup_logging(debug=False, stream=sys.stderr,
 
     warnings.showwarning = sendWarningsToLog
 
+
 def make_temp_filename(tmpdir=None, suffix=""):
     """
     Get a random filename in a tmpdir with an optional extension
@@ -42,6 +44,7 @@ def make_temp_filename(tmpdir=None, suffix=""):
         tmpdir = tempfile._get_default_tempdir()  # pylint: disable=protected-access
     fn = os.path.join(tmpdir, next(tempfile._get_candidate_names())) + suffix  # pylint: disable=protected-access
     return fn
+
 
 def get_tdb_samplenames(file):
     """

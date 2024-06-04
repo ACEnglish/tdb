@@ -4,13 +4,16 @@ Methods to calculate jaccard indexes
 import itertools
 from collections import Counter
 
+
 def make_kmer_sets(seq, kmer_len=5, min_freq=5):
     """
     Make the sets of all kmers and those over min_freq
     """
-    kmers = Counter([seq[i:i + kmer_len] for i in range(len(seq) - kmer_len + 1)])
+    kmers = Counter([seq[i:i + kmer_len]
+                    for i in range(len(seq) - kmer_len + 1)])
     kmers_freq = {k for k, c in kmers.items() if c >= min_freq}
     return set(kmers.keys()), kmers_freq
+
 
 def jaccard_compare_kmers(kmers1, kmers1_freq, kmers2, kmers2_freq):
     """
@@ -26,12 +29,14 @@ def jaccard_compare_kmers(kmers1, kmers1_freq, kmers2, kmers2_freq):
 
     return intersection / union if union else None
 
+
 def jaccard_compare_seqs(seq1, seq2, kmer_len=5, min_freq=5):
     """
     Return the jaccard similarity of two sequences
     """
     return jaccard_compare_kmers(*make_kmer_sets(seq1, kmer_len, min_freq),
                                  *make_kmer_sets(seq2, kmer_len, min_freq))
+
 
 def alleles_jaccard_dist(alleles, counts, kmer_len=5, min_freq=5):
     """
