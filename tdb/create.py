@@ -199,7 +199,10 @@ def create_main(args):
 
     os.mkdir(args.output)
 
+
+    old = pysam.set_verbosity(0) # suppress non-indexed warning
     vcf = pysam.VariantFile(args.input)
+    pysam.set_verbosity(old) # turn back on
     samples = list(vcf.header.samples)
     stats = {"locus": 0, "allele": 0, "sample": 0}
 
