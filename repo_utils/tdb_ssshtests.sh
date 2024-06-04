@@ -153,16 +153,18 @@ fi
 
 run test_q_methyl $tdb query methyl $INDIR/tdb/merge1.tdb -O p -o $OD/methyl.pq
 if [ $test_q_methyl ]; then
-    if [ "${STOPCHECK}" != 'true' ]; then
-        assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
-    fi
     assert_exit_code 0
+    if [ "${STOPCHECK}" != 'true' ]; then
+        python3 repo_utils/pqeq.py $INDIR/queries/methyl.pq $OD/methyl.pq
+        assert_equal $? 0
+    fi
 fi
 
 run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/comp_poly_score.pq
 if [ $test_q_comp_poly_score ]; then
     if [ "${STOPCHECK}" != 'true' ]; then
-        assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
+        python3 repo_utils/pqeq.py $INDIR/queries/comp_poly_score.pq $OD/comp_poly_score.pq
+        assert_equal $? 0
     fi
     assert_exit_code 0
 fi
@@ -170,7 +172,8 @@ fi
 run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/len_poly_score.pq
 if [ $test_q_len_poly_score ]; then
     if [ "${STOPCHECK}" != 'true' ]; then
-        assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
+        python3 repo_utils/pqeq.py $INDIR/queries/len_poly_score.pq $OD/len_poly_score.pq
+        assert_equal $? 0
     fi
     assert_exit_code 0
 fi

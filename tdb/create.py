@@ -77,7 +77,7 @@ def make_parquets(samples, out_dir, compression):
     return ret
 
 
-def sample_extract(locus_id, fmt_fields):
+def sample_extract(locus_id, fmt):
     """
     Given a dict from a vcf record sample, turn them into sample rows
     """
