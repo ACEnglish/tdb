@@ -85,9 +85,7 @@ def sample_extract(locus_id, fmt):
     for an, sd, allr, am in view:
         if an is None:
             continue
-        lrl, lru = allr.split('-')
-        lrl = int(lrl)
-        lru = int(lru)
+        lrl, lru = map(int, allr.split('-'))
         ret.append([locus_id, an, sd, lrl, lru, am])
     return ret
 
@@ -103,10 +101,8 @@ def translate_entry(entry, locus_id):
     alleles = [(locus_id, allele_number, len(sequence),
                 b"" if sequence in [None, "."] else sequence.encode("utf8"))
                for allele_number, sequence in enumerate(entry.alleles)]
-    samples = {}
-    for sample, m_d in entry.samples.items():
-        samples[sample] = sample_extract(locus_id, m_d)
-
+    samples = {sample: sample_extract(locus_id, fmt)
+               for sample, fmt in entry.samples.items()}
     return locus, alleles, samples
 
 
