@@ -71,7 +71,7 @@ def make_parquets(samples, out_dir, compression):
                                      A_SCHEMA, compression=comp)
     ret['sample'] = {}
     for s in samples:
-        fn = os.path.join(out_dir, f"sample.{name}.pq")
+        fn = os.path.join(out_dir, f"sample.{s}.pq")
         ret['sample'][s] = pq.ParquetWriter(fn, S_SCHEMA, compression=comp)
     return ret
 
@@ -142,7 +142,7 @@ def convert_buffer(vcf, samples, stats, avail_mem):
         used_mem += 400 * num_samples
 
         stats['locus'] += 1
-        stats['allele'] += len(cur_allele)
+        stats['allele'] += len(cur_a)
         stats['sample'] += num_samples
 
     return m_buffer, cvt_any
