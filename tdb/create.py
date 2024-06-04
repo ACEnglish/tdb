@@ -70,10 +70,9 @@ def make_parquets(samples, out_dir, compression):
     ret['allele'] = pq.ParquetWriter(os.path.join(out_dir, 'allele.pq'),
                                      A_SCHEMA, compression=comp)
     ret['sample'] = {}
-    for name in samples:
-        ret['sample'][name] = pq.ParquetWriter(os.path.join(out_dir,
-                                                            f"sample.{name}.pq"),
-                                               S_SCHEMA, compression=comp)
+    for s in samples:
+        fn = os.path.join(out_dir, f"sample.{name}.pq")
+        ret['sample'][s] = pq.ParquetWriter(fn, S_SCHEMA, compression=comp)
     return ret
 
 
@@ -102,7 +101,7 @@ def translate_entry(entry, locus_id):
     """
     locus = [locus_id, entry.chrom, entry.start, entry.stop]
     alleles = [(locus_id, allele_number, len(sequence),
-                b'' if sequence is None else sequence.encode("utf8"))
+                b"" if sequence in [None, "."] else sequence.encode("utf8"))
                for allele_number, sequence in enumerate(entry.alleles)]
     samples = {}
     for sample, m_d in entry.samples.items():
@@ -118,7 +117,7 @@ def convert_buffer(vcf, samples, stats, avail_mem):
     """
     m_buffer = {'locus': [],
                 'allele': [],
-                'sample': {_: [] for _ in samples}
+                'sample': {s: [] for s in samples}
                 }
     # Flag for telling main loop when we're finished
     cvt_any = False
@@ -130,17 +129,16 @@ def convert_buffer(vcf, samples, stats, avail_mem):
             break
 
         cvt_any = True
-        cur_locus, cur_allele, cur_sample = translate_entry(entry,
-                                                            stats['locus'])
-        m_buffer['locus'].append(cur_locus)
-        m_buffer['allele'].extend(cur_allele)
+        cur_l, cur_a, cur_s = translate_entry(entry, stats['locus'])
+        m_buffer['locus'].append(cur_l)
+        m_buffer['allele'].extend(cur_a)
         num_samples = 0
-        for name, rows in cur_sample.items():
+        for name, rows in cur_s.items():
             num_samples += len(rows)
             m_buffer['sample'][name].extend(rows)
 
-        used_mem += sys.getsizeof(cur_locus)
-        used_mem += sys.getsizeof(cur_allele)
+        used_mem += sys.getsizeof(cur_l)
+        used_mem += sys.getsizeof(cur_a)
         used_mem += 400 * num_samples
 
         stats['locus'] += 1
@@ -199,10 +197,9 @@ def create_main(args):
 
     os.mkdir(args.output)
 
-
-    old = pysam.set_verbosity(0) # suppress non-indexed warning
+    old = pysam.set_verbosity(0)  # suppress non-indexed warning
     vcf = pysam.VariantFile(args.input)
-    pysam.set_verbosity(old) # turn back on
+    pysam.set_verbosity(old)  # turn back on
     samples = list(vcf.header.samples)
     stats = {"locus": 0, "allele": 0, "sample": 0}
 
