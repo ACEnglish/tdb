@@ -117,7 +117,7 @@ def convert_buffer(vcf, samples, stats, avail_mem):
                 }
     # Flag for telling main loop when we're finished
     cvt_any = False
-    used_mem = int(avail_mem * 0.20)
+    used_mem = int(avail_mem * 0.10)
     while avail_mem > used_mem:
         try:
             entry = next(vcf)
@@ -133,9 +133,9 @@ def convert_buffer(vcf, samples, stats, avail_mem):
             num_samples += len(rows)
             m_buffer['sample'][name].extend(rows)
 
-        used_mem += sys.getsizeof(cur_l)
-        used_mem += sys.getsizeof(cur_a)
-        used_mem += 400 * num_samples
+        # approximate usage of data
+        # 64b numbers, 8bit characters in sequence
+        used_mem += 1800 + ((cur_l[3] - cur_l[2]) * 16)
 
         stats['locus'] += 1
         stats['allele'] += len(cur_a)
