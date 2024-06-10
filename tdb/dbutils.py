@@ -5,13 +5,45 @@ import os
 import sys
 import glob
 import logging
+import tempfile
+import warnings
 
-import pysam
-import truvari
-import numpy as np
-import pandas as pd
-import pyarrow as pa
 import pyarrow.parquet as pq
+
+
+def setup_logging(debug=False, stream=sys.stderr,
+                  log_format="%(asctime)s [%(levelname)s] %(message)s"):
+    """
+    Create default logger
+
+    :param `debug`: Set log-level to logging.DEBUG
+    :type `debug`: boolean, optional
+    :param `stream`: Where log is written
+    :type `stream`: file handler, optional
+    :param `log_format`: Format of log lines
+    :type `log_format`: string, optional
+    """
+    logLevel = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(stream=stream, level=logLevel, format=log_format)
+
+    def sendWarningsToLog(message, category, filename, lineno, *args, **kwargs):  # pylint: disable=unused-argument
+        """
+        Put warnings into logger
+        """
+        logging.warning('%s:%s: %s:%s', filename, lineno,
+                        category.__name__, message)
+
+    warnings.showwarning = sendWarningsToLog
+
+
+def make_temp_filename(tmpdir=None, suffix=""):
+    """
+    Get a random filename in a tmpdir with an optional extension
+    """
+    if tmpdir is None:
+        tmpdir = tempfile._get_default_tempdir()  # pylint: disable=protected-access
+    fn = os.path.join(tmpdir, next(tempfile._get_candidate_names())) + suffix  # pylint: disable=protected-access
+    return fn
 
 
 def get_tdb_samplenames(file):
@@ -57,6 +89,21 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
 
     If a subset of loci are loaded via lfilters, then a filter of ('LocusID', 'in', loaded_locusids)
     is added to afilters and sfilters
+
+    Example:
+        >>> import tdb
+        >>> loci = [("LocusID", "in", [23, 32, 77])] # Only load these loci
+        >>> alleles = [("allele_number", '>', 0)] # And only their non-ref alleles
+        >>> db = tdb.load_tdb("repo_utils/test_files/tdb/merge1.tdb", \
+                lfilters=loci, \
+                afilters=alleles, \
+                samples=["HG02630"])
+        >>> len(db['locus'])
+        3
+        >>> len(db['allele'])
+        6
+        >>> len(db['sample'])
+        1
     """
     def add_filter(filts, n_filt):
         """
@@ -93,164 +140,4 @@ def load_tdb(dbname, samples=None, lfilters=None, afilters=None, sfilters=None):
             sys.exit(1)
         ret['sample'][samp] = pq.read_table(
             names['sample'][samp], filters=sfilters).to_pandas()
-    return ret
-
-
-def set_tdb_types(d):
-    """
-    Sets tdb datatypes of table columns in place
-    """
-    l_types = {"LocusID": np.uint32,
-               "chrom": str,
-               "start": np.uint32,
-               "end": np.uint32}
-    a_types = {"LocusID": np.uint32,
-               "allele_number": np.uint16,
-               "allele_length": np.uint16,
-               "sequence": bytes}
-
-    d['locus'] = d['locus'].astype(l_types)
-    d['allele'] = d['allele'].astype(a_types)
-
-    # last I checked, these types couldn't handle nones
-    # s_types = {"LocusID": np.uint32,
-    #           "allele_number": np.uint16,
-    #           "spanning_reads": np.uint16,
-    #           "length_range_lower": np.uint16,
-    #           "length_range_upper": np.uint16,
-    #           "average_methylation": np.float32}
-
-    # for samp, val in d['sample'].items():
-    #    d['sample'][samp] = val.astype(s_types)
-
-
-def write_samples(samples, output):
-    """
-    Write tdb samples to output folder
-    """
-    s_schema = pa.schema([('LocusID', pa.uint32()),
-                          ('allele_number', pa.uint16()),
-                          ('spanning_reads', pa.uint16()),
-                          ('length_range_lower', pa.uint16()),
-                          ('length_range_upper', pa.uint16()),
-                          ('average_methylation', pa.float32())
-                          ])
-    for sample, value in samples.items():
-        o_fn = os.path.join(output, f"sample.{sample}.pq")
-        m_table = pa.Table.from_pandas(value)
-        n_table = []
-        n_names = []
-        for col, dtype in zip(s_schema.names, s_schema.types):
-            n_table.append(pa.compute.cast(m_table[col], dtype))
-            n_names.append(col)
-        n_table = pa.Table.from_arrays(n_table, names=n_names)
-        writer = pq.ParquetWriter(o_fn, s_schema, compression='gzip')
-        writer.write_table(n_table)
-        writer.close()
-
-
-def dump_tdb(data, output):
-    """
-    Write tdb data to output folder
-
-    WARNING: will overwrite existing data
-    """
-    if not os.path.exists(output):
-        os.mkdir(output)
-    pq_fns = get_tdb_filenames(output)
-    data['locus'].to_parquet(pq_fns['locus'], index=False, compression='gzip')
-    data['allele'].to_parquet(
-        pq_fns['allele'], index=False, compression='gzip')
-    write_samples(data['sample'], output)
-
-
-def pull_alleles(data):
-    """
-    Turn alleles into a table
-    """
-    alleles = (pd.DataFrame(data["alleles"].to_list(), index=data.index)
-               .reset_index()
-               .melt(id_vars='hash', value_name="sequence")
-               .drop(columns="variable")
-               .dropna()
-               .set_index('hash'))
-    # Full deletions without anchor base(?)
-    alleles.loc[alleles["sequence"] == '.', "sequence"] = ""
-    alleles["LocusID"] = data["LocusID"]
-    alleles["allele_number"] = alleles.groupby(["LocusID"]).cumcount()
-    alleles = (alleles.sort_values(["LocusID", "allele_number"])
-               .reset_index(drop=True)
-               .drop_duplicates(subset=["LocusID", "sequence"]))
-    alleles["allele_length"] = alleles["sequence"].str.len()
-    alleles["sequence"] = alleles["sequence"].str.encode("utf-8")
-    alleles = (alleles.sort_values(["LocusID", "allele_number"])
-               [["LocusID", "allele_number", "allele_length", "sequence"]]
-               .reset_index(drop=True))
-    return alleles
-
-
-def pull_saps(data, sample):
-    """
-    Turn sample allele properties into a table
-    """
-    # Remove sites with uninformative genotype information
-    data = data[~data[f'{sample}_GT'].isin([(None,)])]
-    gt = pd.DataFrame(data[f"{sample}_GT"].to_list(), columns=[
-                      "GT1", "GT2"], index=data.index)
-    span = pd.DataFrame(data[f"{sample}_SD"].to_list(), columns=[
-                        "SD1", "SD2"], index=data.index)
-    alci = pd.DataFrame(data[f"{sample}_ALLR"].to_list(), columns=[
-                        "LR1", "LR2"], index=data.index)
-    meth = pd.DataFrame(data[f"{sample}_AM"].to_list(), columns=[
-                        "AM1", "AM2"], index=data.index)
-    sap = pd.concat([data[["LocusID"]], span, alci, meth, gt], axis=1)
-
-    renamer = {"SD1": "spanning_reads", "SD2": "spanning_reads",
-               "LR1": "LR", "LR2": "LR",
-               "AM1": "average_methylation", "AM2": "average_methylation",
-               "GT1": "allele_number", "GT2": "allele_number"}
-    sap = pd.concat([sap[["LocusID", "GT1", "SD1", "LR1", "AM1"]].rename(columns=renamer),
-                     sap[["LocusID", "GT2", "SD2", "LR2", "AM2"]].rename(columns=renamer)],
-                    axis=0)
-    sap[["length_range_lower", "length_range_upper"]
-        ] = sap["LR"].str.split('-', expand=True)
-    # chrY has None
-    sap = sap[~sap["allele_number"].isna()]
-    return sap.drop(columns=["LR"]).reset_index(drop=True)
-
-
-def vcf_to_tdb(vcf_fn):
-    """
-    Turn a vcf into an in-memory tdb database
-    """
-    if not os.path.exists(vcf_fn):
-        raise RuntimeError(f"input {vcf_fn} does not exist")
-
-    ret = {}
-    old = pysam.set_verbosity(0)  # suppressing no-index warning
-    data = truvari.vcf_to_df(vcf_fn, with_info=True,
-                             with_format=True, alleles=True)
-    pysam.set_verbosity(old)
-
-    logging.info("locus count:\t%d", len(data))
-    data["LocusID"] = range(len(data))
-
-    ret["locus"] = data[["LocusID", "chrom", "start", "end"]].reset_index(
-        drop=True).copy()  # pylint: disable=unsubscriptable-object # pylint/issues/3139
-
-    logging.info("Wrangling alleles")
-    allele_df = pull_alleles(data)
-    ret["allele"] = allele_df
-    logging.info("allele count:\t%d", len(allele_df))
-
-    logging.info("Pulling samples")
-    ret["sample"] = {}
-    gt_count = 0
-    old = pysam.set_verbosity(0)  # suppressing no-index warning
-    for sample in pysam.VariantFile(vcf_fn).header.samples:
-        ret['sample'][sample] = pull_saps(data, sample)
-        gt_count += len(ret['sample'][sample])
-    pysam.set_verbosity(old)
-    logging.info("genotype count:\t%d", gt_count)
-    set_tdb_types(ret)
     return ret

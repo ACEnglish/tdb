@@ -1,7 +1,7 @@
 
 test -e ssshtest || curl -O https://raw.githubusercontent.com/ryanlayer/ssshtest/master/ssshtest
 source ssshtest
-#STOP_ON_FAIL=1
+
 # Work inside of the repo folder
 cd "$( dirname "${BASH_SOURCE[0]}" )"/../
 INDIR=repo_utils/test_files
@@ -12,27 +12,28 @@ COVERAGE_RCFILE=.coveragerc
 rm -rf $OD
 mkdir -p $OD
 
-tdb="coverage run --concurrency=multiprocessing -p -m tdb.__main__"
+tdb="coverage run --concurrency=multiprocessing,thread -p -m tdb.__main__"
 # ------------------------------------------------------------
 #                                 test helpers
 # ------------------------------------------------------------
 fn_md5() {
     fn=$1
     # simple md5sum checking
-    md5sum $fn | cut -f1 -d\  
+    md5sum <(sort $fn) | cut -f1 -d\  
 }
 
 tdb_check() {
     # check if parquet files are same
-    dir_name=$1
-    assert_equal $(fn_md5 $INDIR/tdb/$dir_name/allele.pq) $(fn_md5 $OD/$dir_name/allele.pq)
-    assert_equal $(fn_md5 $INDIR/tdb/$dir_name/locus.pq) $(fn_md5 $OD/$dir_name/locus.pq)
-    for i in $INDIR/tdb/$dir_name/sample.*.pq
-    do
-        sname=$(basename ${i%.pq} | cut -f2- -d\.)
-        assert_equal $(fn_md5 $INDIR/tdb/$dir_name/sample.${sname}.pq) $(fn_md5 $OD/$dir_name/sample.${sname}.pq)
-    done
     assert_exit_code 0
+    res_name=$1
+    ans_name=${2:-$1}
+    if [ "${STRIP}" == "true" ]; then
+        strip_opt="--strip"
+    else
+        strip_opt=""
+    fi
+    $tdb equal $strip_opt $INDIR/tdb/$ans_name $OD/$res_name/
+    assert_equal $? 0
 }
 
 # ------------------------------------------------------------
@@ -57,37 +58,56 @@ if [ $test_create1 ]; then
     tdb_check HG00438_chr14.tdb
 fi
 
-run test_create2 $tdb create -o $OD/TwoSamps.tdb $INDIR/vcf/HG00741_chr14.vcf.gz $INDIR/vcf/HG02630_chr14.vcf.gz
+run test_create2 $tdb create -o $OD/HG00741_chr14.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
 if [ $test_create2 ]; then
-    tdb_check TwoSamps.tdb
+    tdb_check HG00741_chr14.tdb
 fi
 
-run test_create3 $tdb create -o $OD/TwoWithTDB.tdb $INDIR/vcf/HG00438_chr14.vcf.gz $INDIR/tdb/HG02630_chr14.tdb
+run test_create3 $tdb create -o $OD/HG02630_chr14.tdb $INDIR/vcf/HG02630_chr14.vcf.gz
 if [ $test_create3 ]; then
-    tdb_check TwoWithTDB.tdb
-    assert_exit_code 0
+    tdb_check HG02630_chr14.tdb
 fi
 
-run test_create_badparam $tdb create -o repo_utils $INDIR/vcf/doesntexist $INDIR/vcf/HG00741_chr14.vcf.gz $INDIR/vcf/HG00741_chr14.vcf.gz
+run test_create_badparam $tdb create -o repo_utils $INDIR/vcf/doesntexist
 if [ $test_create_badparam ]; then
     assert_exit_code 1
 fi
 
-
-# ------------------------------------------------------------
-#                               append
-# ------------------------------------------------------------
-
-run test_append $tdb create -o $OD/appended.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
-run test_append $tdb append --to $OD/appended.tdb --fr $INDIR/vcf/HG02630_chr14.vcf.gz
-if [ $test_append ]; then
-    tdb_check appended.tdb
+run test_create_mergedvcf $tdb create -o $OD/merged_singlevcf.tdb $INDIR/vcf/merged.vcf.gz
+if [ $test_create_mergedvcf ] ; then
+    tdb_check merged_singlevcf.tdb
 fi
 
-run test_append_badparam $tdb append --to doesntexists --fr notreal
-if [ $test_append_badparam ]; then
+# ------------------------------------------------------------
+#                                 merge
+# ------------------------------------------------------------
+
+run test_merge $tdb merge -o $OD/merge1.tdb $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00741_chr14.tdb/ $INDIR/tdb/HG02630_chr14.tdb/
+if [ $test_merge ]; then
+    STRIP=true tdb_check merge1.tdb
+fi
+
+run test_merge_into $tdb create -o $OD/merge_into.tdb $INDIR/vcf/HG00741_chr14.vcf.gz
+run test_merge_into $tdb merge --no-compress --mem 1 --into $OD/merge_into.tdb $INDIR/tdb/HG02630_chr14.tdb $INDIR/tdb/HG00438_chr14.tdb
+if [ $test_merge_into ]; then
+    STRIP=true tdb_check merge_into.tdb
+fi
+
+run test_bad_merge $tdb merge --into $OD/mergex -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
+if [ $test_bad_merge ]; then
     assert_exit_code 1
 fi
+
+run test_bigmerge $tdb bigmerge -o $OD/merge2.tdb $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00741_chr14.tdb/ $INDIR/tdb/HG02630_chr14.tdb/
+if [ $test_bigmerge ]; then
+    STRIP=true tdb_check merge2.tdb merge1.tdb
+fi
+
+run test_bad_bigmerge $tdb bigmerge -o $OD/merge1 $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/tdb/HG00438_chr14.tdb/ $INDIR/HG00741_chr14
+if [ $test_bad_bigmerge ]; then
+    assert_exit_code 1
+fi
+
 
 # ------------------------------------------------------------
 #                                 query
@@ -111,39 +131,64 @@ if [ $test_q_allele_seqs ]; then
     assert_exit_code 0
 fi
 
-run test_q_monref $tdb query monref $INDIR/tdb/TwoSamps.tdb -o $OD/monref.txt
+run test_q_monref $tdb query monref $INDIR/tdb/merge1.tdb -o $OD/monref.txt
 if [ $test_q_monref ]; then
     assert_equal $(fn_md5 $INDIR/queries/monref.txt) $(fn_md5 $OD/monref.txt)
     assert_exit_code 0
 fi
 
-run test_q_gtmerge $tdb query gtmerge $INDIR/tdb/TwoWithTDB.tdb -o $OD/gtmerge.txt
+run test_q_gtmerge $tdb query gtmerge $INDIR/tdb/merge1.tdb -o $OD/gtmerge.txt
 if [ $test_q_gtmerge ]; then
-    assert_equal $(fn_md5 $INDIR/queries/gtmerge.txt) $(fn_md5 $OD/gtmerge.txt)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/gtmerge.txt) $(fn_md5 $OD/gtmerge.txt)
+    fi
     assert_exit_code 0
 fi
 
-run test_q_metadata $tdb query metadata $INDIR/tdb/TwoWithTDB.tdb -o $OD/metadata.txt
+run test_q_metadata $tdb query metadata $INDIR/tdb/merge1.tdb -o $OD/metadata.txt
 if [ $test_q_metadata ]; then
     assert_equal $(fn_md5 $INDIR/queries/metadata.txt) $(fn_md5 $OD/metadata.txt)
     assert_exit_code 0
 fi
 
-run test_q_methyl $tdb query methyl $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/methyl.pq
+run test_q_methyl $tdb query methyl $INDIR/tdb/merge1.tdb -O p -o $OD/methyl.pq
 if [ $test_q_methyl ]; then
-    assert_equal $(fn_md5 $INDIR/queries/methyl.pq) $(fn_md5 $OD/methyl.pq)
     assert_exit_code 0
+    if [ "${STOPCHECK}" != 'true' ]; then
+        python3 repo_utils/pqeq.py $INDIR/queries/methyl.pq $OD/methyl.pq
+        assert_equal $? 0
+    fi
 fi
 
-run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/comp_poly_score.pq
+run test_q_comp_poly_score $tdb query comp_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/comp_poly_score.pq
 if [ $test_q_comp_poly_score ]; then
-    assert_equal $(fn_md5 $INDIR/queries/comp_poly_score.pq) $(fn_md5 $OD/comp_poly_score.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        python3 repo_utils/pqeq.py $INDIR/queries/comp_poly_score.pq $OD/comp_poly_score.pq
+        assert_equal $? 0
+    fi
     assert_exit_code 0
 fi
 
-run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/TwoWithTDB.tdb -O p -o $OD/len_poly_score.pq
+run test_q_len_poly_score $tdb query len_poly_score $INDIR/tdb/merge1.tdb -O p -o $OD/len_poly_score.pq
 if [ $test_q_len_poly_score ]; then
-    assert_equal $(fn_md5 $INDIR/queries/len_poly_score.pq) $(fn_md5 $OD/len_poly_score.pq)
+    if [ "${STOPCHECK}" != 'true' ]; then
+        python3 repo_utils/pqeq.py $INDIR/queries/len_poly_score.pq $OD/len_poly_score.pq
+        assert_equal $? 0
+    fi
+    assert_exit_code 0
+fi
+
+TDB_SEED=123 run test_q_saturation $tdb query saturation $INDIR/tdb/merge1.tdb -o $OD/saturation.tsv
+if [ $test_q_saturation ]; then
+    if [ "${STOPCHECK}" != 'true' ]; then
+        assert_equal $(fn_md5 $INDIR/queries/saturation.tsv) $(fn_md5 $OD/saturation.tsv)
+    fi
+    assert_exit_code 0
+fi
+
+run test_q_singletons $tdb query singletons $INDIR/tdb/merge1.tdb -o $OD/singletons.tsv
+if [ $test_q_singletons ]; then
+    assert_equal $(fn_md5 $INDIR/queries/singletons.tsv) $(fn_md5 $OD/singletons.tsv)
     assert_exit_code 0
 fi
 
@@ -151,19 +196,21 @@ fi
 #                                 deid
 # ------------------------------------------------------------
 
-run test_deid $tdb deid -o $OD/deid.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
-if [ $test_append ]; then
+run test_deid $tdb deid -o $OD/deid.tdb -i $INDIR/tdb/merge1.tdb
+if [ $test_deid ]; then
     tdb_check deid.tdb
 fi
 
-run test_deid_seq $tdb deid -s -o $OD/deid_seq.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
-if [ $test_append ]; then
+run test_deid_seq $tdb deid -s -o $OD/deid_seq.tdb -i $INDIR/tdb/merge1.tdb
+if [ $test_deid_seq ]; then
     tdb_check deid_seq.tdb
 fi
 
-TDB_SEED=123 run test_deid_shuf $tdb deid -S -o $OD/deid_shuf.tdb -i $INDIR/tdb/TwoWithTDB.tdb/
+TDB_SEED=123 run test_deid_shuf $tdb deid -S -o $OD/deid_shuf.tdb -i $INDIR/tdb/merge1.tdb
 if [ $test_deid_shuf ]; then
-    tdb_check deid_shuf.tdb
+    if [ "${STOPCHECK}" != 'true' ]; then
+        tdb_check deid_shuf.tdb
+    fi
 fi
 
 run test_deid_badparam $tdb deid -o repo_utils -i $INDIR/vcf/doesntexist
@@ -174,11 +221,37 @@ fi
 # ------------------------------------------------------------
 #                                 dump
 # ------------------------------------------------------------
-
 run test_dump $tdb dump $INDIR/tdb/HG00438_chr14.tdb -o $OD/HG00438.dump.txt
 if [ $test_dump ]; then
     assert_equal $(fn_md5 $INDIR/queries/HG00438.dump.txt) $(fn_md5 $OD/HG00438.dump.txt)
     assert_exit_code 0
+fi
+
+# ------------------------------------------------------------
+#                                 equal
+# ------------------------------------------------------------
+run test_equal1 $tdb equal $INDIR/tdb/HG00438_chr14.tdb $INDIR/tdb/HG00438_chr14.tdb
+if [ $test_equal1 ]; then
+    assert_exit_code 0
+fi
+
+run test_equal2 $tdb equal $INDIR/tdb/HG00438_chr14.tdb $INDIR/tdb/merge1.tdb
+if [ $test_equal2 ]; then
+    assert_exit_code 1
+fi
+
+run test_equal3 $tdb equal --strip --join $INDIR/tdb/merge1.tdb $INDIR/tdb/merge1.tdb
+if [ $test_equal3 ]; then
+    assert_exit_code 0
+fi
+
+
+# ------------------------------------------------------------
+#                                 doctests
+# ------------------------------------------------------------
+run test_doctests coverage run --concurrency=multiprocessing -p repo_utils/run_doctests.py
+if [ $test_doctests ]; then
+    assert_exit_code 0 
 fi
 
 # ------------------------------------------------------------

@@ -7,17 +7,18 @@ import shutil
 import logging
 import argparse
 import duckdb
-import truvari
 import numpy as np
 import pandas as pd
 
 import tdb
 
-GLOBAL_DUCK_SET = []
+GLOBAL_DUCK_SET = ["SET default_null_order ='NULLS LAST';"]
 
 
 def setup_duck(con):
-    global GLOBAL_DUCK_SET
+    """
+    Set duckdb threads/memory
+    """
     for i in GLOBAL_DUCK_SET:
         con.execute(i)
 
@@ -28,11 +29,20 @@ def check_args(args):
     """
     check_fail = False
 
-    if os.path.exists(args.output):
+    if (args.output is None) == (args.into is None):
+        logging.error("Only one of --output or --into can be specified")
+        check_fail = True
+    if args.output and os.path.exists(args.output):
         logging.error(f"Output {args.output} already exists")
         check_fail = True
-    if not args.output.endswith(".tdb"):
+    if args.into and not os.path.exists(args.into):
+        logging.error(f"Output {args.into} does not exist")
+        check_fail = True
+    if args.output and not args.output.endswith(".tdb"):
         logging.error(f"Output {args.output} must end with `.tdb`")
+        check_fail = True
+    if args.into and not args.into.endswith(".tdb"):
+        logging.error(f"Output {args.into} must end with `.tdb`")
         check_fail = True
     seen_samples = {}
     for i in args.inputs:
@@ -52,23 +62,35 @@ def check_args(args):
     return check_fail
 
 
-def join_loci_tables(original_loci, second_loci):
+def join_loci_tables(original_loci, second_loci, compress):
     """
     Creates a union of two loci tables
 
     Returns a temporary filename holding the joined LocusIDs as
     update_LocusID to_LocusID
+    as well as a path the the updated locus table which should be moved
     """
     con = duckdb.connect()
     setup_duck(con)
 
-    loci_lookup_parquet_path = truvari.make_temp_filename(suffix=".pq")
+    loci_lookup_parquet_path = tdb.make_temp_filename(suffix=".pq")
+    up_locus = tdb.make_temp_filename(suffix=".pq")
+
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY update_LocusID, to_LocusID, chrom, start"
+        logging.info("Sorting/compressing locus table")
 
     query = f"""
     COPY (
         SELECT
             second.locusid AS update_LocusID,
-            original.locusid AS to_LocusID
+            original.locusid AS to_LocusID,
+            COALESCE(original.chrom, second.chrom) AS chrom,
+            COALESCE(original.start, second.start) AS start,
+            COALESCE(original.end, second.end) AS end
         FROM
             read_parquet('{second_loci}') AS second
         FULL JOIN
@@ -77,15 +99,32 @@ def join_loci_tables(original_loci, second_loci):
             second.chrom = original.chrom
             AND second.start = original.start
             AND second.end = original.end
-        ORDER BY update_LocusID, to_LocusID
-    ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET)
+        {do_order}
+    ) TO '{loci_lookup_parquet_path}' (FORMAT PARQUET{comp})
     """
-
     con.execute(query)
     con.close()
 
-    # WARNING!! I'm not doing the disjoint solving, yet
-    return loci_lookup_parquet_path
+    union = pd.read_parquet(loci_lookup_parquet_path)
+    mask = union['to_LocusID'].isna()
+    start_id = union['to_LocusID'].max() + 1
+    union.loc[mask, 'to_LocusID'] = np.arange(start_id, start_id + mask.sum())
+    union['to_LocusID'] = union['to_LocusID'].astype(np.uint32)
+    new_loci = mask.sum()
+    if new_loci:
+        logging.info("new loci: %d", new_loci)
+
+    # Write the new locus table
+    to_write = union.rename(columns={"to_LocusID": "LocusID"})[
+        ["LocusID", "chrom", "start", "end"]]
+    to_write.to_parquet(up_locus, index=False,
+                        compression='gzip' if compress else None)
+
+    # And write the updated lookup
+    union[["update_LocusID", "to_LocusID"]].to_parquet(
+        loci_lookup_parquet_path, index=False)
+
+    return loci_lookup_parquet_path, up_locus
 
 
 def update_allele_locusid(second_allele, loci_lookup):
@@ -97,7 +136,7 @@ def update_allele_locusid(second_allele, loci_lookup):
     con = duckdb.connect()
     setup_duck(con)
 
-    second_updated_locusid = truvari.make_temp_filename(suffix=".pq")
+    second_updated_locusid = tdb.make_temp_filename(suffix=".pq")
 
     create_updated_allele = f"""
     COPY (
@@ -112,10 +151,8 @@ def update_allele_locusid(second_allele, loci_lookup):
             read_parquet('{loci_lookup}') AS lookup
         ON
             second.LocusID == lookup.update_LocusID
-        ORDER BY LocusID, allele_number
     ) TO '{second_updated_locusid}' (FORMAT PARQUET)
     """
-
     con.execute(create_updated_allele)
     con.close()
 
@@ -126,71 +163,67 @@ def create_allele_lookup(original_allele, second_allele):
     """
     create an allele lookup between two db's allele tables
 
+
     Note that the second allele table must already have its loci updated
 
-    Returns the path to the allele lookup
+    Returns the path of a new alleles table and the full allele lookup
     """
     con = duckdb.connect()
     setup_duck(con)
 
-    partial_lookup = truvari.make_temp_filename(suffix=".pq")
+    new_alleles_path = tdb.make_temp_filename(suffix=".pq")
+    allele_lookup_path = tdb.make_temp_filename(suffix=".pq")
 
     query = f"""
+    CREATE TABLE lookup AS SELECT
+        COALESCE(original.LocusID, second.LocusID) AS LocusID,
+        second.allele_number AS update_allele_number,
+        original.allele_number AS to_allele_number,
+        CAST(
+            ROW_NUMBER() OVER (PARTITION BY COALESCE(original.LocusID, second.LocusID) ORDER BY original.allele_number) - 1 
+        AS USMALLINT) AS to_allele_number_new
+    FROM
+        read_parquet('{original_allele}') AS original
+    FULL JOIN
+        read_parquet('{second_allele}') AS second
+    ON
+        second.LocusID == original.LocusID
+        AND second.allele_length == original.allele_length
+        AND second.sequence == original.sequence
+    ORDER BY LocusID, update_allele_number, to_allele_number;
+
     COPY (
         SELECT
-            original.LocusID as LocusID_orig,
-            second.LocusID as LocusID_second,
-            second.allele_number as update_allele_number,
-            original.allele_number as to_allele_number,
+            LocusID,
+            update_allele_number,
+            to_allele_number_new
         FROM
-            read_parquet('{original_allele}') AS original
-        FULL JOIN
-            read_parquet('{second_allele}') AS second
-        ON
-            second.LocusID == original.LocusID
-            AND second.allele_length == original.allele_length
-            AND second.sequence == original.sequence
-        ORDER BY LocusID_orig, LocusID_second, update_allele_number, to_allele_number
-    ) TO '{partial_lookup}' (FORMAT PARQUET)
-    """
+            lookup
+        WHERE
+            update_allele_number IS NOT NULL
+    ) TO '{allele_lookup_path}' (FORMAT PARQUET);
 
+     COPY (
+        SELECT
+            LocusID,
+            update_allele_number, 
+            to_allele_number_new,
+        FROM 
+            lookup
+        WHERE
+            to_allele_number IS NULL
+    ) TO '{new_alleles_path}' (FORMAT PARQUET)
+    """
     con.execute(query)
+
+    new_allele_count = con.execute("""
+        SELECT COUNT(*) AS row_count
+        FROM lookup
+        WHERE to_allele_number IS NULL;
+        """).fetchone()[0]
+    logging.info("new alleles: %d", new_allele_count)
+
     con.close()
-
-    return partial_lookup
-
-
-def update_allele_numbers(partial_lookup):
-    """
-    Given the create_allele_lookup table, renumber the second allele tables allele_numbers
-
-    Writes a temporary file which holds all the new alleles in second relative to first
-    And a temporary file with allele lookup information which will be used for updating the
-    second database's sample tables
-    """
-    new_alleles_path = truvari.make_temp_filename(suffix=".pq")
-    allele_lookup_path = truvari.make_temp_filename(suffix=".pq")
-
-    data = pd.read_parquet(partial_lookup)
-    data['LocusID'] = data['LocusID_orig'].combine_first(
-        data['LocusID_second'])
-    data.drop(columns=["LocusID_orig", "LocusID_second"], inplace=True)
-    data.sort_values(["LocusID", "to_allele_number",
-                     "update_allele_number"], inplace=True)
-    data['to_allele_number_new'] = data.groupby(['LocusID']).cumcount()
-
-    lktypes = {"LocusID": np.uint32, "update_allele_number": np.uint16,
-               "to_allele_number_new": np.uint16}
-    new_alleles = data[data['to_allele_number'].isna()]
-    new_alleles = new_alleles.drop(
-        columns=["to_allele_number"]).astype(lktypes)
-    new_alleles.to_parquet(new_alleles_path, index=False)
-
-    logging.info("new alleles: %d", len(new_alleles))
-    # I need to translate all the alleles... in the sample table. This is only for sample table
-    allele_lookup = data[["LocusID", "update_allele_number",
-                          "to_allele_number_new"]].dropna().astype(lktypes)
-    allele_lookup.to_parquet(allele_lookup_path, index=False)
 
     return new_alleles_path, allele_lookup_path
 
@@ -201,59 +234,50 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
     Only the subset of new alleles in second alleles are pulled.
     The new alleles are renumbered according to `update_allele_numbers`
 
-    This overwrites original_allele
+    Returns a path to a new allele table which should be moved when ready
     """
-    con = duckdb.connect()
+    spillover = tdb.make_temp_filename(suffix=".db")
+    con = duckdb.connect(spillover)
     setup_duck(con)
 
-    tmp = truvari.make_temp_filename(suffix=".pq")
+    up_allele = tdb.make_temp_filename(suffix=".pq")
 
-    subset_query = f"""
-    COPY (
-        SELECT
-            new_alleles.LocusID AS LocusID,
-            new_alleles.to_allele_number_new AS allele_number,
-            second.allele_length AS allele_length,
-            second.sequence AS sequence
-        FROM
-            read_parquet('{new_alleles}') AS new_alleles
-        LEFT JOIN
-            read_parquet('{second_allele}') AS second
-        ON
-            second.LocusID == new_alleles.LocusID
-            AND second.allele_number == new_alleles.update_allele_number
-        ORDER BY LocusID, allele_number, allele_length, sequence
-    ) TO '{tmp}' (FORMAT PARQUET)
-    """
-    con.execute(subset_query)
+    comp = ""
+    do_order = ""
+    if compress:
+        comp = ", COMPRESSION GZIP"
+        do_order = "ORDER BY LocusID, allele_number, allele_length, sequence"
+        logging.info("Sorting/compressing allele table")
 
-    tmp2 = truvari.make_temp_filename(suffix=".pq")
-    # And concatenate (UNION)
-    comp = ", COMPRESSION GZIP" if compress else ""
-    concatenate_query = f"""
+    query = f"""
     COPY (
-        SELECT 
-            CAST(LocusID AS UINTEGER) AS LocusID,
-            CAST(allele_number AS USMALLINT) AS allele_number,
-            CAST(allele_length AS USMALLINT) AS allele_length,
-            CAST(sequence AS BLOB) AS sequence
+        WITH subset_alleles AS (
+            SELECT
+                new_alleles.LocusID AS LocusID,
+                new_alleles.to_allele_number_new AS allele_number,
+                second.allele_length AS allele_length,
+                second.sequence AS sequence
+            FROM
+                read_parquet('{new_alleles}') AS new_alleles
+            LEFT JOIN
+                read_parquet('{second_allele}') AS second
+            ON
+                second.LocusID = new_alleles.LocusID
+                AND second.allele_number = new_alleles.update_allele_number
+        )
+        SELECT *
         FROM read_parquet('{original_allele}')
         UNION ALL
-        SELECT
-            CAST(LocusID AS UINTEGER) AS LocusID,
-            CAST(allele_number AS USMALLINT) AS allele_number,
-            CAST(allele_length AS USMALLINT) AS allele_length,
-            CAST(sequence AS BLOB) AS sequence
-        FROM read_parquet('{tmp}')
-        ORDER BY LocusID, allele_number, allele_length, sequence
-    ) TO '{tmp2}' (FORMAT PARQUET{comp})
+        SELECT *
+        FROM subset_alleles
+        {do_order}
+    ) TO '{up_allele}' (FORMAT PARQUET{comp});
     """
-
-    con.execute(concatenate_query)
+    con.execute(query)
     con.close()
 
-    shutil.move(tmp2, original_allele)
-    shutil.os.remove(tmp)
+    shutil.os.remove(spillover)
+    return up_allele
 
 
 def create_sample_lookup(loci_lookup, allele_lookup):
@@ -265,7 +289,7 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     con = duckdb.connect()
     setup_duck(con)
 
-    sample_lookup = truvari.make_temp_filename(suffix=".pq")
+    sample_lookup = tdb.make_temp_filename(suffix=".pq")
 
     query = f"""
     COPY (
@@ -284,7 +308,7 @@ def create_sample_lookup(loci_lookup, allele_lookup):
     return sample_lookup
 
 
-def update_sample_table(second_sample, sample_lookup, output_path, compress):
+def update_sample_table(second_sample, sample_lookup, compress):
     """
     Update the LocusID and allele_number of a second_sample to the consolidated ids.
 
@@ -293,16 +317,19 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
     con = duckdb.connect()
     setup_duck(con)
 
+    output_path = tdb.make_temp_filename(suffix=".pq")
     comp = ", COMPRESSION GZIP" if compress else ""
+    do_order = "ORDER BY LocusID, allele_number" if compress else ""
+
     query = f"""
     COPY(
         SELECT
-            CAST(lookup.to_LocusID AS UINTEGER) AS LocusID,
-            CAST(lookup.to_allele_number_new AS USMALLINT) AS allele_number,
-            CAST(sample.spanning_reads AS USMALLINT) AS spanning_reads,
-            CAST(sample.length_range_lower AS USMALLINT)  AS length_range_lower,
-            CAST(sample.length_range_upper AS USMALLINT) AS length_range_upper,
-            CAST(sample.average_methylation AS FLOAT4) AS average_methylation
+            lookup.to_LocusID AS LocusID,
+            lookup.to_allele_number_new AS allele_number,
+            sample.spanning_reads AS spanning_reads,
+            sample.length_range_lower AS length_range_lower,
+            sample.length_range_upper AS length_range_upper,
+            sample.average_methylation AS average_methylation
         FROM
             read_parquet('{second_sample}') AS sample
         LEFT JOIN
@@ -310,11 +337,12 @@ def update_sample_table(second_sample, sample_lookup, output_path, compress):
         ON
             lookup.update_LocusID = sample.LocusID
             AND lookup.update_allele_number == sample.allele_number
-        ORDER BY LocusID, allele_number
+        {do_order}
     ) TO '{output_path}' (FORMAT PARQUET{comp})
     """
     con.execute(query)
     con.close()
+    return output_path
 
 
 def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
@@ -326,68 +354,92 @@ def tdb_consolidate(tdb_1, tdb_2, allele_gz=True, samp_gz=True):
     Automatically removes the temporary flies it creates
     The tdbs should be get_tdb_filenames or whatever it's called
     """
-    loci_lookup = join_loci_tables(tdb_1['locus'], tdb_2['locus'])
-    # I'm still not writing joined locus.
-    second_allele_locus_updated = update_allele_locusid(
-        tdb_2['allele'], loci_lookup)
-    partial_lookup = create_allele_lookup(
-        tdb_1['allele'], second_allele_locus_updated)
-    new_alleles, allele_lookup = update_allele_numbers(partial_lookup)
-    consolidate_alleles(
-        tdb_1['allele'], second_allele_locus_updated, new_alleles, allele_gz)
+    loci_lookup, up_locus = join_loci_tables(tdb_1['locus'],
+                                             tdb_2['locus'],
+                                             allele_gz)
+    second_allele_locus_updated = update_allele_locusid(tdb_2['allele'],
+                                                        loci_lookup)
+    new_alleles, allele_lookup = create_allele_lookup(tdb_1['allele'],
+                                                      second_allele_locus_updated)
+    logging.debug("Consolidating alleles")
+    up_allele = consolidate_alleles(tdb_1['allele'], second_allele_locus_updated,
+                                    new_alleles, allele_gz)
+    logging.debug("Creating sample lookup")
     sample_lookup = create_sample_lookup(loci_lookup, allele_lookup)
 
     output_dir = os.path.dirname(tdb_1['locus'])
+    logging.debug("Updating samples")
+    up_samples = {}
     for name, second_sample in tdb_2['sample'].items():
+        up_samples[name] = update_sample_table(second_sample,
+                                               sample_lookup, samp_gz)
+
+    logging.debug("putting into output")
+    shutil.move(up_locus, tdb_1['locus'])
+    shutil.move(up_allele, tdb_1['allele'])
+    for name, tmp_path in up_samples.items():
         output_name = os.path.join(output_dir, f"sample.{name}.pq")
-        update_sample_table(second_sample, sample_lookup, output_name, samp_gz)
+        shutil.move(tmp_path, output_name)
 
     # Clean up after yourself
     # You know, if you give them static names you won't need to clean but once...
     shutil.os.remove(loci_lookup)
     shutil.os.remove(second_allele_locus_updated)
-    shutil.os.remove(partial_lookup)
     shutil.os.remove(new_alleles)
     shutil.os.remove(allele_lookup)
     shutil.os.remove(sample_lookup)
 
 
 def merge_main(args):
-    global GLOBAL_DUCK_SET
+    """
+    Merge multiple tdbs
+    """
     parser = argparse.ArgumentParser(prog="tdb merge", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     # parser.add_argument("--into", merge into the first tdb listed instead of copying
     # it into the output. This will replace append
-    parser.add_argument("-o", "--output", metavar="OUT", required=True,
+    parser.add_argument("-o", "--output", metavar="OUT",
                         help="Output tdb directory")
+    parser.add_argument("--into", metavar="INTO",
+                        help="Existing tdb directory to merge into")
     parser.add_argument("--mem", default=None,
                         help="Maximum memory in GB (off)")
     parser.add_argument("--threads", default=1, type=int,
                         help="Number of threads (%(default)s)")
     parser.add_argument("--no-compress", action="store_false",
-                        help="Skip compression (faster merge, bigger output)")
+                        help="Don't sort/compress output (faster merge, bigger output)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Verbose logging")
     parser.add_argument("inputs", metavar="IN", nargs="+",
                         help="tdb files")
     args = parser.parse_args(args)
 
-    truvari.setup_logging()
+    tdb.setup_logging(args.debug)
 
     if check_args(args):
-        logging.error("Cannot create database. Exiting")
+        logging.error("Cannot merge database. Exiting")
         sys.exit(1)
 
     GLOBAL_DUCK_SET.append(f"SET threads = {args.threads};")
     if args.mem:
         GLOBAL_DUCK_SET.append(f"SET memory_limit = '{args.mem}GB';")
 
-    num_tdbs = len(args.inputs)
-    first_tdb_name = args.inputs.pop(0)
-    logging.info("Consolidating %s (1/%d)", first_tdb_name, num_tdbs)
-    shutil.copytree(first_tdb_name, args.output)
-    dest_tdb = tdb.get_tdb_filenames(args.output)
+    if args.output is not None:
+        logging.info("Consolidating %s (1/%d)",
+                     args.inputs[0], len(args.inputs))
+        shutil.copytree(args.inputs[0], args.output)
+        args.inputs.pop(0)
+        dest_tdb = tdb.get_tdb_filenames(args.output)
+        # Correction for counting number of databases
+        correction = 1
+    else:
+        dest_tdb = tdb.get_tdb_filenames(args.into)
+        correction = 0
+
+    num_tdbs = len(args.inputs) + correction
 
     for pos, i in enumerate(args.inputs):
-        pos += 2
+        pos += 1 + correction
         logging.info("Consolidating %s (%d/%d)", i, pos, num_tdbs)
         update_tdb = tdb.get_tdb_filenames(i)
         acomp = args.no_compress and pos == num_tdbs
