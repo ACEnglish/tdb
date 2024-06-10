@@ -4,6 +4,9 @@
 
 ## Installation
 
+Releases available in [Releases](https://github.com/ACEnglish/tdb/releases/)
+
+Alternatively, install from the repository via:
 ```bash
 git clone https://github.com/ACEnglish/tdb.git
 cd tdb/
