@@ -103,16 +103,17 @@ def translate_entry(entry, locus_id, samples):
     """
     locus = [locus_id, entry.chrom, entry.start, entry.stop]
     # dict ensures there's no duplicates
-    filt_alleles = list(dict.fromkeys(filter(lambda x: x not in [None, "."], entry.alleles)))
+    filt_alleles = list(dict.fromkeys(filter(lambda x: x not in [None, "."],
+                                             entry.alleles)))
     alleles = [(locus_id, allele_number, len(sequence),
                 sequence.encode("utf8"))
                for allele_number, sequence in enumerate(filt_alleles)]
     samples = {sample: sample_extract(locus_id, fmt, entry.alleles, filt_alleles)
-            for sample, fmt in zip(samples, entry.samples.values())}
+               for sample, fmt in zip(samples, entry.samples.values())}
     return locus, alleles, samples
 
 
-def convert_buffer(vcf, samples, stats, avail_mem, seen_loci, force=False):
+def convert_buffer(vcf, samples, stats, seen_loci, avail_mem=4e9, force=False):
     """
     Converts a number of vcf entries.
     Tries to monitor memory to not buffer too many
@@ -133,7 +134,9 @@ def convert_buffer(vcf, samples, stats, avail_mem, seen_loci, force=False):
         cvt_any = True
         # pylint: disable=broad-exception-caught
         try:
-            cur_l, cur_a, cur_s = translate_entry(entry, stats['locus'], samples)
+            cur_l, cur_a, cur_s = translate_entry(entry,
+                                                  stats['locus'],
+                                                  samples)
         except Exception as e:
             logging.warning("Unable to convert %s", str(entry))
             logging.warning("Error: %s", str(e))
@@ -144,7 +147,8 @@ def convert_buffer(vcf, samples, stats, avail_mem, seen_loci, force=False):
 
         lkey = f'{cur_l[1]}:{cur_l[2]}-{cur_l[3]}'
         if lkey in seen_loci:
-            logging.critical("Locus %s seen more than once! Skipping presumably redundant entries", lkey)
+            logging.critical(
+                "Locus %s seen more than once! Skipping presumably redundant entries", lkey)
             if not force:
                 sys.exit(1)
             continue
@@ -242,7 +246,8 @@ def create_main(args):
     if args.samples:
         n_samples = args.samples.split(',')
         if len(n_samples) != len(samples):
-            logging.error("--samples (%d) don't match VCF's %d samples", len(n_samples), len(samples))
+            logging.error("--samples (%d) don't match VCF's %d samples",
+                          len(n_samples), len(samples))
             logging.error("Sample name overriding must be 1-to-1")
             sys.exit(1)
         samples = n_samples
@@ -255,7 +260,9 @@ def create_main(args):
     logging.info("Converting VCF with %d samples", len(samples))
     seen_loci = set()
     while True:
-        cur_tables, cvt_any = convert_buffer(vcf, samples, stats, avail_mem, seen_loci, args.force)
+        cur_tables, cvt_any = convert_buffer(vcf, samples, stats,
+                                             seen_loci, avail_mem,
+                                             args.force)
         if not cvt_any:
             break
         logging.info("Writing batch. Row totals %s", stats)
