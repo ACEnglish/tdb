@@ -113,6 +113,7 @@ def translate_entry(entry, locus_id, samples):
     return locus, alleles, samples
 
 
+# pylint: disable=too-many-positional-arguments
 def convert_buffer(vcf, samples, stats, seen_loci, avail_mem=4e9, force=False):
     """
     Converts a number of vcf entries.
@@ -171,6 +172,7 @@ def convert_buffer(vcf, samples, stats, seen_loci, avail_mem=4e9, force=False):
         stats['sample'] += num_samples
 
     return m_buffer, cvt_any
+# pylint: enable=too-many-positional-arguments
 
 
 def write_tables(cur_tables, tables):
