@@ -194,8 +194,6 @@ def create_main(args):
     tdb.setup_logging()
     avail_mem = args.mem * 1e9
 
-    os.mkdir(args.output)
-
     old = pysam.set_verbosity(0)  # suppress non-indexed warning
     vcf = pysam.VariantFile(args.input)
     pysam.set_verbosity(old)  # turn back on
@@ -207,7 +205,10 @@ def create_main(args):
             logging.error("Sample name overriding must be 1-to-1")
             sys.exit(1)
         samples = n_samples
+
     stats = {"locus": 0, "allele": 0, "sample": 0}
+
+    os.mkdir(args.output)
 
     tables = make_parquets(samples, args.output, args.no_compress)
     logging.info("Converting VCF with %d samples", len(samples))
