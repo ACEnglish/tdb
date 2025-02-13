@@ -131,6 +131,7 @@ def convert_buffer(vcf, samples, stats, avail_mem, seen_loci, force=False):
             break
 
         cvt_any = True
+        # pylint: disable=broad-exception-caught
         try:
             cur_l, cur_a, cur_s = translate_entry(entry, stats['locus'], samples)
         except Exception as e:
@@ -139,14 +140,16 @@ def convert_buffer(vcf, samples, stats, avail_mem, seen_loci, force=False):
             if not force:
                 sys.exit(1)
             continue
+        # pylint: enable=broad-exception-caught
+
         lkey = f'{cur_l[1]}:{cur_l[2]}-{cur_l[3]}'
         if lkey in seen_loci:
             logging.critical("Locus %s seen more than once! Skipping presumably redundant entries", lkey)
             if not force:
                 sys.exit(1)
             continue
-        else:
-            seen_loci.add(lkey)
+
+        seen_loci.add(lkey)
 
         m_buffer['locus'].append(cur_l)
         m_buffer['allele'].extend(cur_a)
