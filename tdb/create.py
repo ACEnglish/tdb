@@ -81,7 +81,8 @@ def sample_extract(locus_id, fmt):
     Given a dict from a vcf record sample, turn them into sample rows
     """
     ret = []
-    view = zip(fmt['GT'], fmt['SD'], fmt['ALLR'], fmt['AM'])
+    view = zip(fmt['GT'], fmt['SD'], fmt['ALLR'],
+               fmt.get('AM', [None] * len(fmt['GT'])))
     for an, sd, allr, am in view:
         if an is None:
             continue
@@ -90,7 +91,7 @@ def sample_extract(locus_id, fmt):
     return ret
 
 
-def translate_entry(entry, locus_id):
+def translate_entry(entry, locus_id, samples):
     """
     return three things,
     a list of LocusID, chrom, start, end
@@ -102,7 +103,7 @@ def translate_entry(entry, locus_id):
                 b"" if sequence in [None, "."] else sequence.encode("utf8"))
                for allele_number, sequence in enumerate(entry.alleles)]
     samples = {sample: sample_extract(locus_id, fmt)
-               for sample, fmt in entry.samples.items()}
+               for sample, fmt in zip(samples, entry.samples.values())}
     return locus, alleles, samples
 
 
@@ -125,7 +126,7 @@ def convert_buffer(vcf, samples, stats, avail_mem):
             break
 
         cvt_any = True
-        cur_l, cur_a, cur_s = translate_entry(entry, stats['locus'])
+        cur_l, cur_a, cur_s = translate_entry(entry, stats['locus'], samples)
         m_buffer['locus'].append(cur_l)
         m_buffer['allele'].extend(cur_a)
         num_samples = 0
@@ -172,6 +173,8 @@ def create_main(args):
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output", metavar="OUT", required=True,
                         help="Output tdb directory")
+    parser.add_argument("-s", "--samples", type=str, default=None,
+                        help="Comma-separated sample names to set in tdb")
     parser.add_argument("--mem", metavar="MEM", type=int, default=4,
                         help="Memory in GB available to buffer reading (%(default)s)")
     parser.add_argument("--no-compress", action="store_false",
@@ -197,6 +200,13 @@ def create_main(args):
     vcf = pysam.VariantFile(args.input)
     pysam.set_verbosity(old)  # turn back on
     samples = list(vcf.header.samples)
+    if args.samples:
+        n_samples = args.samples.split(',')
+        if len(n_samples) != len(samples):
+            logging.error("--samples (%d) don't match VCF's %d samples", len(n_samples), len(samples))
+            logging.error("Sample name overriding must be 1-to-1")
+            sys.exit(1)
+        samples = n_samples
     stats = {"locus": 0, "allele": 0, "sample": 0}
 
     tables = make_parquets(samples, args.output, args.no_compress)
