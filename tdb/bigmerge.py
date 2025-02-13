@@ -335,7 +335,7 @@ def consolidate_allele(con, db_paths, output_dir, compress=False, threads=1):
     alocus = os.path.join(output_dir, "allele.pq")
     query = f"""
     COPY (
-        SELECT *
+        SELECT DISTINCT *
         FROM read_parquet('{base["allele"]}')
         UNION ALL
         SELECT *

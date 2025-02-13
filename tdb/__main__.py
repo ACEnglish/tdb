@@ -25,7 +25,7 @@ CMDS = {
 
 cmd_str = ", ".join(list(CMDS.keys()))
 USAGE = f"""
-tdb v0.2.0 - Tandem repeat database tools
+tdb v0.3.0 - Tandem repeat database tools
 
 Commands: {cmd_str}"""
 
