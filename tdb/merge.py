@@ -85,7 +85,7 @@ def join_loci_tables(original_loci, second_loci, compress):
 
     query = f"""
     COPY (
-        SELECT
+        SELECT DISTINCT
             second.locusid AS update_LocusID,
             original.locusid AS to_LocusID,
             COALESCE(original.chrom, second.chrom) AS chrom,
@@ -265,11 +265,12 @@ def consolidate_alleles(original_allele, second_allele, new_alleles, compress):
                 second.LocusID = new_alleles.LocusID
                 AND second.allele_number = new_alleles.update_allele_number
         )
-        SELECT *
-        FROM read_parquet('{original_allele}')
-        UNION ALL
-        SELECT *
-        FROM subset_alleles
+        SELECT DISTINCT *
+        FROM (
+            SELECT * FROM read_parquet('{original_allele}')
+            UNION ALL
+            SELECT * FROM subset_alleles
+        )
         {do_order}
     ) TO '{up_allele}' (FORMAT PARQUET{comp});
     """
