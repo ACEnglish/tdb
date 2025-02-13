@@ -1,6 +1,9 @@
 """
 Tandem repeat database and analysis queries
 """
+from tdb.create import (
+    save_tdb
+)
 
 from tdb.dbutils import (
     get_tdb_filenames,

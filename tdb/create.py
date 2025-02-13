@@ -186,6 +186,21 @@ def write_tables(cur_tables, tables):
         out_samp.write(sample)
 
 
+def save_tdb(cur_tdb, out_tdb_fn, compression=True):
+    """
+    Write an in memory tdb to a new output tdb directory
+    `out_tdb_fn` Must end in .tdb and must not exists
+    """
+    if not out_tdb_fn.endswith(".tdb"):
+        raise IOError("TDB output files must end with `.tdb`")
+    if os.path.exists(out_tdb_fn):
+        raise IOError(f"TDB already exists {out_tdb_fn}")
+    # Should be validating cur_tdb
+    os.mkdir(out_tdb_fn)
+    out = make_parquets(cur_tdb['sample'].keys(), out_tdb_fn, compression)
+    write_tables(cur_tdb, out)
+
+
 def create_main(args):
     """
     Create a new tdb from multiple input calls
