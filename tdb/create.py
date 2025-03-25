@@ -95,6 +95,8 @@ def sample_extract(locus_id, fmt, o_alleles, n_alleles):
         an = n_alleles.index(o_alleles[an])
         lrl, lru = map(int, allr.split('-'))
         ps = fmt.get('PS', None)
+        if isinstance(ps, tuple):
+            ps = ps[0]
         ret.append([locus_id, an, sd, ps, hp, lrl, lru, am])
     return ret
 
