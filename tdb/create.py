@@ -23,7 +23,7 @@ DTYPES = {"LocusID": pa.uint32(),
           "sequence": pa.binary(),
           "spanning_reads": pa.uint16(),
           "phase_set": pa.uint32(),
-          "haplotype": pa.uint16(),
+          "haplotype": pa.uint8(),
           "length_range_lower": pa.uint16(),
           "length_range_upper": pa.uint16(),
           "average_methylation": pa.float32()}
@@ -147,6 +147,7 @@ def convert_buffer(vcf, samples, stats, seen_loci, avail_mem=4e9, force=False):
             logging.warning("Unable to convert %s", str(entry))
             logging.warning("Error: %s", str(e))
             if not force:
+                logging.error("Exiting")
                 sys.exit(1)
             continue
         # pylint: enable=broad-exception-caught

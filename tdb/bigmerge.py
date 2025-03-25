@@ -360,12 +360,15 @@ def sample_puller(con, dbname, output_dir, compress):
     files = tdb.get_tdb_filenames(dbname)
     for _, sample_pq in files['sample'].items():
         out_name = os.path.join(output_dir, os.path.basename(sample_pq))
+        # TODO: new fields need to be pulled
         query = f"""
             COPY (
                 SELECT
                     allele_lookup.to_LocusID as LocusID,
                     allele_lookup.to_allele_number_new as allele_number,
                     sample.spanning_reads,
+                    sample.phase_set,
+                    sample.haplotype,
                     sample.length_range_lower,
                     sample.length_range_upper,
                     sample.average_methylation,

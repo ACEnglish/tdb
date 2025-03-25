@@ -328,6 +328,8 @@ def update_sample_table(second_sample, sample_lookup, compress):
             lookup.to_LocusID AS LocusID,
             lookup.to_allele_number_new AS allele_number,
             sample.spanning_reads AS spanning_reads,
+            sample.phase_set AS phase_set,
+            sample.haplotype AS haplotype,
             sample.length_range_lower AS length_range_lower,
             sample.length_range_upper AS length_range_upper,
             sample.average_methylation AS average_methylation
