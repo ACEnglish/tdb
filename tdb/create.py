@@ -22,14 +22,16 @@ DTYPES = {"LocusID": pa.uint32(),
           "allele_length": pa.uint16(),
           "sequence": pa.binary(),
           "spanning_reads": pa.uint16(),
+          "phase_set": pa.uint32(),
+          "haplotype": pa.uint16(),
           "length_range_lower": pa.uint16(),
           "length_range_upper": pa.uint16(),
           "average_methylation": pa.float32()}
 
 L_COLUMNS = ["LocusID", "chrom", "start", "end"]
 A_COLUMNS = ["LocusID", "allele_number", "allele_length", "sequence"]
-S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "length_range_lower",
-             "length_range_upper", "average_methylation"]
+S_COLUMNS = ["LocusID", "allele_number", "spanning_reads", "phase_set", "haplotype",
+             "length_range_lower", "length_range_upper", "average_methylation"]
 
 L_SCHEMA = pa.schema({key: DTYPES[key] for key in L_COLUMNS})
 A_SCHEMA = pa.schema({key: DTYPES[key] for key in A_COLUMNS})
@@ -82,15 +84,18 @@ def sample_extract(locus_id, fmt, o_alleles, n_alleles):
     """
     ret = []
     gts = [_ for _ in fmt['GT'] if _ is not None]
-    view = zip(gts, fmt['SD'], fmt['ALLR'],
-               fmt.get('AM', [None] * len(gts)))
-    for an, sd, allr, am in view:
-        if an is None:
-            continue
+    view = zip(gts,
+               fmt['SD'],
+               fmt['ALLR'],
+               fmt.get('AM', [None] * len(gts)),
+               range(len(gts))# if fmt.phased else [None, None]
+            )
+    for an, sd, allr, am, hp in view:
         # Map allele number to new, deduplicated allele number
         an = n_alleles.index(o_alleles[an])
         lrl, lru = map(int, allr.split('-'))
-        ret.append([locus_id, an, sd, lrl, lru, am])
+        ps = fmt.get('PS', None)
+        ret.append([locus_id, an, sd, ps, hp, lrl, lru, am])
     return ret
 
 
