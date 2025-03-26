@@ -203,20 +203,43 @@ def write_tables(cur_tables, tables):
         out_samp.write(sample)
 
 
-def save_tdb(cur_tdb, out_tdb_fn, compression=True):
+def save_tdb(cur_tdb, out_dir, compression=True):
     """
     Write an in memory tdb to a new output tdb directory
     `out_tdb_fn` Must end in .tdb and must not exists
     """
-    if not out_tdb_fn.endswith(".tdb"):
+    if not out_dir.endswith(".tdb"):
         raise IOError("TDB output files must end with `.tdb`")
-    if os.path.exists(out_tdb_fn):
-        raise IOError(f"TDB already exists {out_tdb_fn}")
+    if os.path.exists(out_dir):
+        raise IOError(f"TDB already exists {out_dir}")
     # Should be validating cur_tdb
-    os.mkdir(out_tdb_fn)
-    out = make_parquets(cur_tdb['sample'].keys(), out_tdb_fn, compression)
-    write_tables(cur_tdb, out)
+    os.mkdir(out_dir)
 
+    comp = "GZIP" if compression else None
+    l_out = pq.ParquetWriter(os.path.join(out_dir, 'locus.pq'),
+                                    L_SCHEMA, compression=comp)
+
+    ldf = pd.DataFrame(cur_tdb["locus"], columns=L_COLUMNS, copy=False)
+    locus = pa.Table.from_pandas(ldf, schema=L_SCHEMA, preserve_index=False)
+    l_out.write(locus)
+    l_out.close()
+
+    a_out = pq.ParquetWriter(os.path.join(out_dir, 'allele.pq'),
+                                     A_SCHEMA, compression=comp)
+    adf = pd.DataFrame(cur_tdb["allele"], columns=A_COLUMNS, copy=False)
+    allele = pa.Table.from_pandas(adf, schema=A_SCHEMA, preserve_index=False)
+    a_out.write(allele)
+    a_out.close()
+
+    for sname, table in cur_tdb['sample'].items():
+        fn = os.path.join(out_dir, f"sample.{sname}.pq")
+        s_out = pq.ParquetWriter(fn, S_SCHEMA, compression=comp)
+        sdf = pd.DataFrame(table,
+                           columns=S_COLUMNS, copy=False)
+        sample = pa.Table.from_pandas(sdf, schema=S_SCHEMA,
+                                      preserve_index=False)
+        s_out.write(sample)
+        s_out.close()
 
 def create_main(args):
     """
