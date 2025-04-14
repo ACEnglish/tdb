@@ -124,7 +124,7 @@ def monref(data, *args, **kwargs):
 
     out_table.append(['all',
                       len(any_loci_alt),
-                      (~any_loci_alt).sum()
+                      np.size(any_loci_alt) - np.count_nonzero(any_loci_alt)
                       ])
     out_table = pd.DataFrame(out_table, columns=["sample", "loci", "mon_ref"])
     out_table['pct'] = out_table['mon_ref'] / out_table['loci']
