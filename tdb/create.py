@@ -80,15 +80,25 @@ def make_parquets(samples, out_dir, compression):
 
 def sample_extract(locus_id, fmt, o_alleles, n_alleles):
     """
+    Broken when e.g. GT=2|1
     Given a dict from a vcf record sample, turn them into sample rows
     """
     ret = []
     gts = [_ for _ in fmt['GT'] if _ is not None]
+
+    # GT=2|1 doesn't have its e.g. fmt['SD'] in the same order
+    phase = range(len(gts))
+    if len(gts) > 1 and gts[0] > gts[1]:
+        flip_hap = True
+        gts = gts[::-1]
+        phase = list(phase)[::-1]
+    
     view = zip(gts,
                fmt['SD'],
                fmt['ALLR'],
                fmt.get('AM', [None] * len(gts)),
-               range(len(gts))# if fmt.phased else [None, None]
+               phase
+               #range(len(gts))# if fmt.phased else [None, None]
             )
     for an, sd, allr, am, hp in view:
         # Map allele number to new, deduplicated allele number
@@ -109,7 +119,7 @@ def translate_entry(entry, locus_id, samples):
     a dictionary of sample: list of sample rows
     """
     locus = [locus_id, entry.chrom, entry.start, entry.stop]
-    # dict ensures there's no duplicates
+    # ensure there's no duplicates
     filt_alleles = list(dict.fromkeys(filter(lambda x: x not in [None, "."],
                                              entry.alleles)))
     alleles = [(locus_id, allele_number, len(sequence),
