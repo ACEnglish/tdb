@@ -89,16 +89,14 @@ def sample_extract(locus_id, fmt, o_alleles, n_alleles):
     # GT=2|1 doesn't have its e.g. fmt['SD'] in the same order
     phase = range(len(gts))
     if len(gts) > 1 and gts[0] > gts[1]:
-        flip_hap = True
         gts = gts[::-1]
         phase = list(phase)[::-1]
-    
+
     view = zip(gts,
                fmt['SD'],
                fmt['ALLR'],
                fmt.get('AM', [None] * len(gts)),
-               phase
-               #range(len(gts))# if fmt.phased else [None, None]
+               phase # if fmt.phased else [None, None]
             )
     for an, sd, allr, am, hp in view:
         # Map allele number to new, deduplicated allele number
